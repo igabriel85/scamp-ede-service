@@ -46,6 +46,7 @@ ede_cfg_file = os.path.join(etc_dir, 'ede_cfg.yaml')
 
 # predefined variables
 ALLOWED_DATA_EXTENSIONS = {'csv', 'json'}
+ALLOWED_PATTERN_EXTENSIONS = {'csv'}
 allowed_source = ['minio', 'ts', 'kafka', 'local']
 
 # redis connection
@@ -69,6 +70,7 @@ class SourceSchemaMinio(marshmallow.Schema):
     host = marshmallow.fields.Str()
     access_key = marshmallow.fields.Str()
     secret_key = marshmallow.fields.Str()
+    secure = marshmallow.fields.Bool()
 
 
 class SourceSchemaInflux(marshmallow.Schema):
@@ -76,6 +78,7 @@ class SourceSchemaInflux(marshmallow.Schema):
     port = marshmallow.fields.Int()
     token = marshmallow.fields.Str()
     bucket = marshmallow.fields.Str()
+    query = marshmallow.fields.Str()
 
 
 class SourceSchemaKafka(marshmallow.Schema):
@@ -93,7 +96,8 @@ class SourceSchema(marshmallow.Schema):
 class SourceSchemaReq(marshmallow.Schema):
     source = marshmallow.fields.Nested(SourceSchema)
 
-
+class PatternListSchema(marshmallow.Schema):
+    patterns = marshmallow.fields.List(marshmallow.fields.Str())
 
 ################# Old ################
 class DataListSchema(marshmallow.Schema):
@@ -131,7 +135,7 @@ aug_sequencer_resp = {
 @marshal_with(StatusSchemaList(), code=200)
 class ScampStatus(Resource, MethodResource):
     def get(self):
-        import sklearn, stumpy
+        import sklearn, stumpy, shap
         resp = jsonify({
             'libraries': [
                 {
@@ -142,10 +146,10 @@ class ScampStatus(Resource, MethodResource):
                     "version": str(stumpy.__version__),
                     "module": "stumpy",
                 },
-                # {
-                #     "version": str(shap.__version__),
-                #     "module": "shap",
-                # }
+                {
+                    "version": str(shap.__version__),
+                    "module": "shap",
+                }
             ]
         })
         resp.status_code = 200
@@ -299,6 +303,92 @@ class DataHandlerLocal(Resource, MethodResource):
             resp.status_code = 400
         return resp
 
+
+@doc(description='List registered patterns', tags=['engine'])
+class ScampPattern(Resource, MethodResource):
+    @marshal_with(PatternListSchema(), code=200)
+    def get(self):
+        patterns = [i.split('/')[-1] for i in glob.glob(f"{etc_dir}/*.csv")]
+        log.info(f'Patterns found: {len(patterns)}')
+        resp = jsonify(
+            {
+                "patterns": patterns,
+            }
+        )
+        resp.status_code = 200
+        return resp
+
+@doc(description='Add/remove patterns', tags=['engine'])
+class ScampPatternDetails(Resource, MethodResource):
+    def get(self, pattern):
+        pattern_file = os.path.join(etc_dir, pattern)
+        if os.path.isfile(pattern_file):
+            return send_file(pattern_file, mimetype="application/octet-stream")
+        else:
+            log.error(f"Pattern {pattern} not found!")
+            resp = jsonify({
+                "error": f"Pattern {pattern} not found!"
+            })
+            resp.status_code = 404
+            return resp
+
+    def put(self, pattern):
+        if 'file' not in request.files:
+            log.error('No file in request!')
+            resp = jsonify(
+                            {
+                                'error': 'no file in request'
+                            }
+                        )
+            resp.status_code = 400
+            return resp
+        file = request.files['file']
+        if file.filename == '':
+            log.error('No file selected for upload')
+            resp = jsonify(
+                {
+                    'message': 'no file selected for upload'
+                }
+            )
+            resp.status_code = 400
+
+        if file and allowed_file(file.filename, ALLOWED_PATTERN_EXTENSIONS):
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(etc_dir, filename))
+            if file.filename != pattern:
+                log.warning(f"File name mismatch from resource {file.filename} and file {pattern}")
+            log.info(f"Pattern {pattern} upload succesfull")
+            resp = jsonify({
+                'message': "pattern upload successfull"
+            })
+            resp.status_code = 201
+        else:
+            log.error(f"Unsupported pattern content_type, supported are {list(ALLOWED_PATTERN_EXTENSIONS)}")
+            resp = jsonify(
+                {
+                    'message': f'allowed pattern file types are: {list(ALLOWED_PATTERN_EXTENSIONS)}'
+                }
+            )
+            resp.status_code = 400
+        return resp
+
+    def delete(self, pattern):
+        pattern_file = os.path.join(etc_dir, pattern)
+        if os.path.isfile(pattern_file):
+            os.remove(pattern_file)
+            log.info(f"Pattern {pattern} deleted")
+            resp = jsonify({
+                'message': f"Pattern {pattern} deleted"
+            })
+            resp.status_code = 200
+            return resp
+        else:
+            log.error(f"Pattern {pattern} not found!")
+            resp = jsonify({
+                "error": f"Pattern {pattern} not found!"
+            })
+            resp.status_code = 404
+            return resp
 
 @doc(description='Engine worker status', tags=['engine'])
 class EngineWorkers(Resource, MethodResource):
@@ -571,6 +661,8 @@ api.add_resource(DataHandlerLocal, "/v1/source/local/<string:data>")
 
 # api.add_resource(ScampEdeEngine, "/v1/ede/config")
 # api.add_resource(ScampEdeEngine, "/v1/ede/jobs")
+api.add_resource(ScampPattern, "/v1/ede/pattern")
+api.add_resource(ScampPatternDetails, "/v1/ede/pattern/<string:pattern>")
 api.add_resource(EngineWorkers, "/v1/ede/workers")
 
 api.add_resource(DataHandlerViz, "/v1/source/<string:source>")
@@ -582,6 +674,9 @@ api.add_resource(DataHandlerRemote, "/v1/source/remote/<string:data>")
 docs.register(ScampStatus)
 docs.register(ScampDataSource)
 docs.register(ScampDataSourceDetails)
+docs.register(ScampPattern)
+docs.register(ScampPatternDetails)
+
 docs.register(EngineWorkers)
 docs.register(DataHandlerViz)
 docs.register(DataHandlerLocal)
