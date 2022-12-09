@@ -19,7 +19,9 @@
             }
           },
           "required": [
-            "host"
+            "host",
+            "port",
+            "topic"
           ]
         },
         "local_source": {
@@ -39,35 +41,41 @@
             }
           },
           "required": [
-            "host"
+            "access_key",
+            "host",
+            "secret_key"
           ]
         },
         "ts_source": {
           "type": "object",
           "properties": {
-            "host": {
+            "bucket": {
               "type": "string"
             },
-            "token": {
+            "host": {
               "type": "string"
             },
             "port": {
               "type": "integer"
             },
-            "bucket": {
+            "token": {
+              "type": "string"
+            },
+            "query": {
               "type": "string"
             }
           },
           "required": [
-            "host"
+            "bucket",
+            "host",
+            "port",
+            "token",
+            "query"
           ]
         }
       },
       "required": [
-        "kafka_source",
-        "local_source",
-        "minio_source",
-        "ts_source"
+        "local_source"
       ]
     }
   },

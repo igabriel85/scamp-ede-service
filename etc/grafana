@@ -2,3 +2,11 @@ eyJrIjoiRG1ycUtCMWNRS0dLRDl6QW14M0E0QlpJNzFScG1YUVAiLCJuIjoiZWRlLXNjYW1wIiwiaWQi
 
 
 curl -H "Authorization: Bearer eyJrIjoiRG1ycUtCMWNRS0dLRDl6QW14M0E0QlpJNzFScG1YUVAiLCJuIjoiZWRlLXNjYW1wIiwiaWQiOjF9" https://grafana.services.scamp.roiot.ro/api/dashboards/home
+
+
+
+
+https://grafana.services.scamp.roiot.ro
+
+username: admin
+password: nu0ahde7Thei1ai
