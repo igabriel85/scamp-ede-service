@@ -1,0 +1,15 @@
+source:
+  local_source: /data
+  ts_source:
+     host: https://influxdb.services.scamp.roiot.ro
+     port: 8086
+     token: "4kF2LkIAl_8Z6EnyF31Qd4paxQeDaTayCs0-onBQVlt5V1jWu82KSRg6AI0mwbh8-91S-C-z7ztqLSFIFochsQ=="
+     bucket: primary
+  minio_source:
+     host: https://minio.services.scamp.roiot.ro
+     access_key: minio
+     secret_key: minio123
+  kafka_source:
+     host: kafka.services.scamp.roiot.ro
+     port: 9092
+     topic: scamp-ede

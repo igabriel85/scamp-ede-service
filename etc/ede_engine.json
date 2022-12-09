@@ -1,0 +1,62 @@
+{
+  "source": {},
+  "out": {
+    "grafana": {},
+    "kafka": {}
+  },
+  "operators": [
+    {
+      "scaler": {
+        "MinMaxScaler": {
+          "copy": "False",
+          "clip": "False"
+        }
+      }
+    },
+    {
+      "query": {}
+    },
+    {
+      "cycle_detect": {
+        "pattern": "loc_of_pattern",
+        "max_distance": 6.0,
+        "mark": "True" // add labels and send via Kafka or grafana
+      }
+    },
+    {
+      "delta_bias": {
+        "bias": 10
+      }
+    },
+    {
+      "cluster": {
+        "HDSCAN": {
+          "min_cluster_size": 5,
+          "min_samples": 5,
+          "metric": "dtw", // dtw use precomputed
+          "algorithm": "best",
+          "leaf_size": 30,
+          "p": null
+        },
+        "mark": "True" // add labels and send via Kafka or grafana
+      }
+    },
+    {
+      "anomaly": {
+            "IsolationForest": {
+            "n_estimators": 100,
+            "max_samples": "auto",
+            "contamination": "auto",
+            "max_features": 1.0,
+            "bootstrap": "False",
+            "n_jobs": -1,
+            "behaviour": "new",
+            "random_state": null,
+            "verbose": 0,
+            "warm_start": "False"
+            },
+            "mark": "True" // add labels and send via Kafka or grafana
+        }
+    }
+  ]
+}

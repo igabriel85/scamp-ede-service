@@ -1,0 +1,4 @@
+eyJrIjoiRG1ycUtCMWNRS0dLRDl6QW14M0E0QlpJNzFScG1YUVAiLCJuIjoiZWRlLXNjYW1wIiwiaWQiOjF9
+
+
+curl -H "Authorization: Bearer eyJrIjoiRG1ycUtCMWNRS0dLRDl6QW14M0E0QlpJNzFScG1YUVAiLCJuIjoiZWRlLXNjYW1wIiwiaWQiOjF9" https://grafana.services.scamp.roiot.ro/api/dashboards/home

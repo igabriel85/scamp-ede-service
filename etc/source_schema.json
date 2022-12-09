@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "object",
+      "properties": {
+        "kafka_source": {
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string"
+            },
+            "port": {
+              "type": "integer"
+            },
+            "topic": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "host"
+          ]
+        },
+        "local_source": {
+          "type": "string"
+        },
+        "minio_source": {
+          "type": "object",
+          "properties": {
+            "access_key": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "secret_key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "host"
+          ]
+        },
+        "ts_source": {
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string"
+            },
+            "token": {
+              "type": "string"
+            },
+            "port": {
+              "type": "integer"
+            },
+            "bucket": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "host"
+          ]
+        }
+      },
+      "required": [
+        "kafka_source",
+        "local_source",
+        "minio_source",
+        "ts_source"
+      ]
+    }
+  },
+  "required": [
+    "source"
+  ]
+}

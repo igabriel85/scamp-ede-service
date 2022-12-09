@@ -1,0 +1,175 @@
+1670412103.193790    service.py:130 	ERROR    Payload is not JSON for source configuration
+1670413351.081780    service.py:158 	ERROR    Payload is not JSON for source configuration
+1670447971.372620    service.py:159 	ERROR    Payload is not JSON for source configuration
+1670447998.504839    service.py:170 	ERROR    Payload is not valid for source configuration: 'source' is a required property
+
+Failed validating 'required' in schema:
+    {'$schema': 'http://json-schema.org/draft-04/schema#',
+     'properties': {'source': {'properties': {'kafka_source': {'properties': {'host': {'type': 'string'},
+                                                                              'port': {'type': 'integer'},
+                                                                              'topic': {'type': 'string'}},
+                                                               'required': ['host'],
+                                                               'type': 'object'},
+                                              'local_source': {'type': 'string'},
+                                              'minio_source': {'properties': {'access_key': {'type': 'string'},
+                                                                              'host': {'type': 'string'},
+                                                                              'secret_key': {'type': 'string'}},
+                                                               'required': ['host'],
+                                                               'type': 'object'},
+                                              'ts_source': {'properties': {'host': {'type': 'string'},
+                                                                           'password': {'type': 'string'},
+                                                                           'port': {'type': 'integer'},
+                                                                           'user': {'type': 'string'}},
+                                                            'required': ['host'],
+                                                            'type': 'object'}},
+                               'required': ['kafka_source',
+                                            'local_source',
+                                            'minio_source',
+                                            'ts_source'],
+                               'type': 'object'}},
+     'required': ['source'],
+     'type': 'object'}
+
+On instance:
+    {'influx_source': {'host': 'string',
+                       'password': 'string',
+                       'port': 'string',
+                       'user': 'string'},
+     'kafka_source': {'host': 'string',
+                      'port': 'string',
+                      'topic': 'string'},
+     'local_source': {'local_source': 'string'},
+     'minio_source': {'access_key': 'string',
+                      'host': 'string',
+                      'secret_key': 'string'}}
+1670448045.888666    service.py:170 	ERROR    Payload is not valid for source configuration: 'source' is a required property
+
+Failed validating 'required' in schema:
+    {'$schema': 'http://json-schema.org/draft-04/schema#',
+     'properties': {'source': {'properties': {'kafka_source': {'properties': {'host': {'type': 'string'},
+                                                                              'port': {'type': 'integer'},
+                                                                              'topic': {'type': 'string'}},
+                                                               'required': ['host'],
+                                                               'type': 'object'},
+                                              'local_source': {'type': 'string'},
+                                              'minio_source': {'properties': {'access_key': {'type': 'string'},
+                                                                              'host': {'type': 'string'},
+                                                                              'secret_key': {'type': 'string'}},
+                                                               'required': ['host'],
+                                                               'type': 'object'},
+                                              'ts_source': {'properties': {'host': {'type': 'string'},
+                                                                           'password': {'type': 'string'},
+                                                                           'port': {'type': 'integer'},
+                                                                           'user': {'type': 'string'}},
+                                                            'required': ['host'],
+                                                            'type': 'object'}},
+                               'required': ['kafka_source',
+                                            'local_source',
+                                            'minio_source',
+                                            'ts_source'],
+                               'type': 'object'}},
+     'required': ['source'],
+     'type': 'object'}
+
+On instance:
+    {'influx_source': {'host': 'string',
+                       'password': 'string',
+                       'port': 'string',
+                       'user': 'string'},
+     'kafka_source': {'host': 'string',
+                      'port': 'string',
+                      'topic': 'string'},
+     'local_source': {'local_source': 'string'},
+     'minio_source': {'access_key': 'string',
+                      'host': 'string',
+                      'secret_key': 'string'}}
+1670448128.748736    service.py:173 	ERROR    Payload is not valid for source configuration: 'ts_source' is a required property
+
+Failed validating 'required' in schema['properties']['source']:
+    {'properties': {'kafka_source': {'properties': {'host': {'type': 'string'},
+                                                    'port': {'type': 'integer'},
+                                                    'topic': {'type': 'string'}},
+                                     'required': ['host'],
+                                     'type': 'object'},
+                    'local_source': {'type': 'string'},
+                    'minio_source': {'properties': {'access_key': {'type': 'string'},
+                                                    'host': {'type': 'string'},
+                                                    'secret_key': {'type': 'string'}},
+                                     'required': ['host'],
+                                     'type': 'object'},
+                    'ts_source': {'properties': {'host': {'type': 'string'},
+                                                 'password': {'type': 'string'},
+                                                 'port': {'type': 'integer'},
+                                                 'user': {'type': 'string'}},
+                                  'required': ['host'],
+                                  'type': 'object'}},
+     'required': ['kafka_source',
+                  'local_source',
+                  'minio_source',
+                  'ts_source'],
+     'type': 'object'}
+
+On instance['source']:
+    {'influx_source': {'host': 'string',
+                       'password': 'string',
+                       'port': 'string',
+                       'user': 'string'},
+     'kafka_source': {'host': 'string',
+                      'port': 'string',
+                      'topic': 'string'},
+     'local_source': {'local_source': 'string'},
+     'minio_source': {'access_key': 'string',
+                      'host': 'string',
+                      'secret_key': 'string'}}
+1670448129.871940    service.py:173 	ERROR    Payload is not valid for source configuration: 'ts_source' is a required property
+
+Failed validating 'required' in schema['properties']['source']:
+    {'properties': {'kafka_source': {'properties': {'host': {'type': 'string'},
+                                                    'port': {'type': 'integer'},
+                                                    'topic': {'type': 'string'}},
+                                     'required': ['host'],
+                                     'type': 'object'},
+                    'local_source': {'type': 'string'},
+                    'minio_source': {'properties': {'access_key': {'type': 'string'},
+                                                    'host': {'type': 'string'},
+                                                    'secret_key': {'type': 'string'}},
+                                     'required': ['host'],
+                                     'type': 'object'},
+                    'ts_source': {'properties': {'host': {'type': 'string'},
+                                                 'password': {'type': 'string'},
+                                                 'port': {'type': 'integer'},
+                                                 'user': {'type': 'string'}},
+                                  'required': ['host'],
+                                  'type': 'object'}},
+     'required': ['kafka_source',
+                  'local_source',
+                  'minio_source',
+                  'ts_source'],
+     'type': 'object'}
+
+On instance['source']:
+    {'influx_source': {'host': 'string',
+                       'password': 'string',
+                       'port': 'string',
+                       'user': 'string'},
+     'kafka_source': {'host': 'string',
+                      'port': 'string',
+                      'topic': 'string'},
+     'local_source': {'local_source': 'string'},
+     'minio_source': {'access_key': 'string',
+                      'host': 'string',
+                      'secret_key': 'string'}}
+1670448161.476181    service.py:173 	ERROR    Payload is not valid for source configuration: {'local_source': 'string'} is not of type 'string'
+
+Failed validating 'type' in schema['properties']['source']['properties']['local_source']:
+    {'type': 'string'}
+
+On instance['source']['local_source']:
+    {'local_source': 'string'}
+1670448340.749290    service.py:173 	ERROR    Payload is not valid for source configuration: 'string' is not of type 'integer'
+
+Failed validating 'type' in schema['properties']['source']['properties']['kafka_source']['properties']['port']:
+    {'type': 'integer'}
+
+On instance['source']['kafka_source']['port']:
+    'string'

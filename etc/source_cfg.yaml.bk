@@ -1,0 +1,15 @@
+source:
+  local_source: /data
+  ts_source:
+     host: https://influxdb.services.scamp.roiot.ro
+     port: 8086
+     user: admin
+     password: admin
+  minio_source:
+     host: https://minio.services.scamp.roiot.ro
+     access_key: minio
+     secret_key: minio123
+  kafka_source:
+     host: kafka.services.scamp.roiot.ro
+     port: 9092
+     topic: scamp-ede

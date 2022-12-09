@@ -1,0 +1,12 @@
+version: '2'
+services:
+    bd4nrg_ads:
+        build: .
+        ports:
+            - "5001:5001"
+        volumes:
+            - .:/app
+        depends_on:
+            - redis
+    redis:
+        image: redis
