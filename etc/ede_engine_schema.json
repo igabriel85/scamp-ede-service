@@ -1,0 +1,182 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "object",
+      "properties": {
+        "local": {
+          "type": "string"
+        }
+      }
+    },
+    "out": {
+      "type": "object",
+      "properties": {
+        "grafana": {
+          "type": "object"
+        },
+        "kafka": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string"
+            },
+            "broker": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "topic",
+            "broker"
+          ]
+        }
+      }
+    },
+    "operators": {
+      "type": "object",
+      "properties": {
+        "scaler": {
+          "type": "object",
+          "properties": {
+            "MinMaxScaler": {
+              "type": "object",
+              "properties": {
+                "copy": {
+                  "type": "integer"
+                },
+                "clip": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "cycle_detect": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "type": "string"
+            },
+            "max_distance": {
+              "type": "number"
+            },
+            "checkpoint": {
+              "type": "integer"
+            },
+            "delta_bias": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "pattern",
+            "max_distance"
+          ]
+        },
+        "cluster": {
+          "type": "object",
+          "properties": {
+            "HDSCAN": {
+              "type": "object",
+              "properties": {
+                "min_cluster_size": {
+                  "type": "integer"
+                },
+                "min_samples": {
+                  "type": "integer"
+                },
+                "algorithm": {
+                  "type": "string"
+                },
+                "leaf_size": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "min_cluster_size",
+                "min_samples",
+                "algorithm",
+                "leaf_size"
+              ]
+            },
+            "bootstrap": {
+              "type": "integer"
+            },
+            "model": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "model"
+          ]
+        },
+        "anomaly": {
+          "type": "object",
+          "properties": {
+            "iforest.IForest": {
+              "type": "object",
+              "properties": {
+                "n_estimators": {
+                  "type": "integer"
+                },
+                "max_samples": {
+                  "type": "string"
+                },
+                "contamination": {
+                  "type": "number"
+                },
+                "max_features": {
+                  "type": "number"
+                },
+                "bootstrap": {
+                  "type": "integer"
+                },
+                "n_jobs": {
+                  "type": "integer"
+                },
+                "behaviour": {
+                  "type": "string"
+                },
+                "random_state": {
+                  "type": "null"
+                },
+                "verbose": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "n_estimators",
+                "max_samples",
+                "contamination",
+                "max_features",
+                "bootstrap",
+                "n_jobs",
+                "behaviour",
+                "random_state",
+                "verbose"
+              ]
+            },
+            "mark": {
+              "type": "integer"
+            },
+            "model": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "model"
+          ]
+        }
+      },
+      "required": [
+        "scaler",
+        "cycle_detect"
+      ]
+    }
+  },
+  "required": [
+    "source",
+    "out",
+    "operators"
+  ]
+}

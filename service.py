@@ -70,7 +70,7 @@ class SourceSchemaMinio(marshmallow.Schema):
     host = marshmallow.fields.Str()
     access_key = marshmallow.fields.Str()
     secret_key = marshmallow.fields.Str()
-    secure = marshmallow.fields.Bool()
+    secure = marshmallow.fields.Int()
 
 
 class SourceSchemaInflux(marshmallow.Schema):
@@ -93,13 +93,102 @@ class SourceSchema(marshmallow.Schema):
     ts_source = marshmallow.fields.Nested(SourceSchemaInflux)
     kafka_source = marshmallow.fields.Nested(SourceSchemaKafka)
 
+
 class SourceSchemaReq(marshmallow.Schema):
     source = marshmallow.fields.Nested(SourceSchema)
+
 
 class PatternListSchema(marshmallow.Schema):
     patterns = marshmallow.fields.List(marshmallow.fields.Str())
 
+
+class LocalSource(marshmallow.Schema):
+    local = marshmallow.fields.Str()
+
+
+class OutKafka(marshmallow.Schema):
+    topic = marshmallow.fields.Str()
+    broker = marshmallow.fields.Str()
+
+
+class EngineOut(marshmallow.Schema):
+    kafka = marshmallow.fields.Nested(OutKafka)
+    grafana = marshmallow.fields.Dict()
+
+
+class EngineOutkafka(marshmallow.Schema):
+    kafka = marshmallow.fields.Nested(OutKafka)
+
+
+class MMScaler(marshmallow.Schema):
+    copy = marshmallow.fields.Float()
+    clip = marshmallow.fields.Float()
+
+
+class EngineScalerMM(marshmallow.Schema):
+    MinMaxScaler = marshmallow.fields.Nested(MMScaler)
+
+
+# class EngineScaler(marshmallow.Schema):
+#     scaler = marshmallow.fields.Nested(EngineScalerMM)
+
+
+class EngineCycleDetect(marshmallow.Schema):
+    pattern = marshmallow.fields.Str()
+    max_distance = marshmallow.fields.Float()
+    checkpoint = marshmallow.fields.Int()
+    delta_bias = marshmallow.fields.Float()
+
+
+class HDBSCANSchema(marshmallow.Schema):
+    min_cluster_size = marshmallow.fields.Int()
+    min_samples = marshmallow.fields.Int()
+    cluster_selection_epsilon = marshmallow.fields.Float()
+    cluster_selection_method = marshmallow.fields.Str()
+    allow_single_cluster = marshmallow.fields.Int()
+    leaf_size = marshmallow.fields.Int()
+
+
+class EngineClusterHDBSCAN(marshmallow.Schema):
+    HDBSCAN = marshmallow.fields.Nested(HDBSCANSchema)
+    bootstrap = marshmallow.fields.Int()
+    model = marshmallow.fields.Str()
+
+
+class IFSchema(marshmallow.Schema):
+    n_estimators = marshmallow.fields.Int()
+    max_samples = marshmallow.fields.Float()
+    contamination = marshmallow.fields.Float()
+    max_features = marshmallow.fields.Float()
+    bootstrap = marshmallow.fields.Int()
+    n_jobs = marshmallow.fields.Int()
+    behaviour = marshmallow.fields.Str()
+    random_state = marshmallow.fields.Int()
+    versbose = marshmallow.fields.Int()
+
+class EngineAnomalyIF(marshmallow.Schema):
+    IForest = marshmallow.fields.Nested(IFSchema)
+    mark = marshmallow.fields.Int()
+    model = marshmallow.fields.Str()
+
+class EngineOperators(marshmallow.Schema):
+    scaler = marshmallow.fields.Nested(EngineScalerMM)
+    cluster = marshmallow.fields.Nested(EngineClusterHDBSCAN)
+    anomaly = marshmallow.fields.Nested(EngineAnomalyIF)
+    cycle_detect = marshmallow.fields.Nested(EngineCycleDetect)
+
+class EngineSchema(marshmallow.Schema):
+    source = marshmallow.fields.Nested(LocalSource)
+    out = marshmallow.fields.Nested(EngineOut)
+    operators = marshmallow.fields.Nested(EngineOperators)
+    # cycle_detect = marshmallow.fields.Nested(EngineCycleDetect)
+    # cluster = marshmallow.fields.Nested(EngineClusterHDBSCAN)
+    # anomaly = marshmallow.fields.Nested(EngineAnomalyIF)
+
+
+
 ################# Old ################
+
 class DataListSchema(marshmallow.Schema):
     # data = marshmallow.fields.Str()
     data = marshmallow.fields.List(fields.Dict(keys=fields.Str(), values=fields.Str()))
@@ -452,6 +541,70 @@ class EngineWorkers(Resource, MethodResource):
         resp.status_code = 200
         return resp
 
+@doc(description='Manage Engine Config', tags=['engine'])
+class ScampEdeEngine(Resource, MethodResource):
+    @marshal_with(EngineSchema(), code=200)
+    def get(self):
+        config_file = os.path.join(etc_dir, 'ede_engine.yaml')
+        config_dict = load_yaml(config_file)
+        resp = jsonify(config_dict)
+        resp.status_code = 200
+        return resp
+
+    @marshal_with(EngineSchema(), code=200)
+    @use_kwargs(EngineSchema(), apply=False)
+    def put(self):
+        if not request.is_json:
+            log.error('No JSON in request!')
+            resp = jsonify(
+                {
+                    'error': 'No JSON in request'
+                }
+            )
+            resp.status_code = 400
+            return resp
+        else:
+            schema = load_schema('ede_engine_schema.json')
+            config_file = os.path.join(etc_dir, 'ede_engine.yaml')
+            # config_dict = load_yaml(config_file)
+            try:
+                jsonschema.validate(request.json, schema)
+            except jsonschema.exceptions.ValidationError as e:
+                log.error(f"Payload is not valid for source configuration: {e}")
+                resp = jsonify({
+                    'error': f"Payload is not valid: {e}"
+                })
+                resp.status_code = 400
+                return resp
+            check_and_rename(config_file)
+            with open(config_file, 'w') as f:
+                yaml.dump(request.json, f)
+            resp = jsonify({
+                'message': f"Engine configuration updated!"
+            })
+            resp.status_code = 201
+            return resp
+
+
+@doc(description='Revert Engine Configuration to last config', tags=['engine'])
+class EdeEngineRevertConfig(Resource, MethodResource):
+    def post(self):
+        config_file_old = os.path.join(etc_dir, 'ede_engine.yaml.old')
+        config_file = os.path.join(etc_dir, 'ede_engine.yaml')
+        config_file
+        if os.path.isfile(config_file_old):
+            os.replace(config_file_old, config_file)
+            resp = jsonify({
+                'message': f"Engine configuration reverted!"
+            })
+            resp.status_code = 201
+            return resp
+        else:
+            resp = jsonify({
+                'error': 'No old config file found!'
+            })
+            resp.status_code = 404
+            return resp
 ##################
 
 
@@ -659,7 +812,8 @@ api.add_resource(ScampDataSourceDetails, "/v1/source/<string:source>") # local, 
 api.add_resource(DataHandlerLocal, "/v1/source/local/<string:data>")
 
 
-# api.add_resource(ScampEdeEngine, "/v1/ede/config")
+api.add_resource(ScampEdeEngine, "/v1/ede/config")
+api.add_resource(EdeEngineRevertConfig, "/v1/ede/config/revert")
 # api.add_resource(ScampEdeEngine, "/v1/ede/jobs")
 api.add_resource(ScampPattern, "/v1/ede/pattern")
 api.add_resource(ScampPatternDetails, "/v1/ede/pattern/<string:pattern>")
@@ -676,8 +830,10 @@ docs.register(ScampDataSource)
 docs.register(ScampDataSourceDetails)
 docs.register(ScampPattern)
 docs.register(ScampPatternDetails)
-
+docs.register(ScampEdeEngine)
+docs.register(EdeEngineRevertConfig)
 docs.register(EngineWorkers)
+
 docs.register(DataHandlerViz)
 docs.register(DataHandlerLocal)
 docs.register(DataHandlerRemote)
