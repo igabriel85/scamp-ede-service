@@ -1,16 +1,8 @@
 import os
-# limit GPU allocation
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" #issue #152
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import numpy as np
 np.random.seed(42)
 import importlib
 import yaml
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.decomposition import SparsePCA, PCA
-from sklearn.base import clone
-from collections import Counter
 import pandas as pd
 import json
 import stumpy
@@ -19,27 +11,15 @@ from minio.error import InvalidResponseError
 from kafka import KafkaProducer
 from dtaidistance import dtw
 import hdbscan
-import tqdm
-import glob
-import fnmatch
-import gzip
-import re
-import sys
-import random
-import itertools
-# Import all models
 from joblib import dump, load
-from sklearn.ensemble import IsolationForest
-from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 
-from logging import getLogger
-log = getLogger(__name__)
+# from logging import getLogger
+# log = getLogger(__name__)
 
 
 # Influx Connection
-# from influxdb import InfluxDBClient, DataFrameClient
+from influxdb_client import InfluxDBClient
 
-from subprocess import check_output
 
 
 class EDEScampEngine():
@@ -49,7 +29,8 @@ class EDEScampEngine():
                  data_dir,
                  etc_dir,
                  models_dir,
-                 minio_bucket='scamp-models'
+                 minio_bucket='scamp-models',
+                 job={}
                  # pattern_file
                  ):
         self.ede_cfg = ede_cfg
@@ -64,6 +45,14 @@ class EDEScampEngine():
         self.allowed_extensions = {'joblib', 'pickle'}
         self.fillna = True
         self.cdata = 0
+        self.job = job
+
+    def __job_stat(self, message):
+        if isinstance(self.job, dict):
+            self.job['progress'] = message
+        else:
+            self.job.meta['progress'] = message
+            self.job.save_meta()
 
     def load_data(self):
         '''
@@ -74,6 +63,7 @@ class EDEScampEngine():
         if 'local' in self.ede_cfg['source'].keys():
             df = self.__local_data()
         elif 'ts_source' in self.ede_cfg['source'].keys():
+            df = self.__influxdb_data()
             pass # TODO: Implement this
         elif 'minio_source' in self.ede_cfg['source'].keys():
             df = self.__minio_data()
@@ -89,6 +79,7 @@ class EDEScampEngine():
         '''
         Load local data
         '''
+        self.__job_stat('Loading data')
         df = pd.read_csv(os.path.join(self.data_dir, self.ede_cfg['source']['local']), index_col=0)
         df.index = pd.to_datetime(df.index)
         df = self.__scale_data(df)
@@ -108,10 +99,12 @@ class EDEScampEngine():
                 secure=False) # TODO fetch secure flag from config, string to boo
             bucket = self.ede_cfg['source']['minio_source']['bucket']
             data_object = self.ede_cfg['source']['minio_source']['data']
-
+            # Check if bucket exists
             # Get the data
             local_data = os.path.join(data_dir, data_object)
             bdata = client.get_object(bucket, data_object)
+            self.__job_stat('Loading minio data')
+            # self.job.meta['status'] = 'Loading minio data'
             with open(local_data, 'wb') as file_data:
                 for d in bdata.stream(32 * 1024):
                     file_data.write(d)
@@ -124,6 +117,26 @@ class EDEScampEngine():
         df = self.__scale_data(df)
         return df
 
+    def __influxdb_data(self):
+        '''
+        Load data from influxdb
+        '''
+        try:
+            client = InfluxDBClient(url=self.source_cfg['source']['ts_source']['host'],
+                                    token=self.source_cfg['source']['ts_source']['token'],
+                                    org=self.source_cfg['source']['ts_source'].get('org', 'scamp'))
+            query = self.ede_cfg['source']['ts_source']['query']
+            self.__job_stat('Loading influxdb data')
+
+            df = client.query_api().query_data_frame(query)
+            df['time'] = pd.to_datetime(df['time'])
+            df.set_index('time', inplace=True)
+            df = self.__scale_data(df)
+            return df
+        except Exception as inst:
+            print(f'Error loading data from influxdb with {type(inst)} and {inst.args}')
+            self.__job_stat('Error loading data from influxdb')
+
     def __kafka_out(self, body):
         # Output the results to kafka
         try:
@@ -131,13 +144,17 @@ class EDEScampEngine():
                                           bootstrap_servers=["{}".format(self.ede_cfg['out']['kafka']['broker'])],
                                           retries=5)
             producer.send(self.ede_cfg['out']['kafka']['topic'], body)
+            self.__job_stat('Output to kafka')
+            # self.job.meta['status'] = 'Output to kafka'
         except Exception as inst:
+            self.__job_stat(f'Error outputting to kafka with {type(inst)} and {inst.args}')
+            # self.job.meta['status'] = 'Error output to kafka'
             print('Error outputing to kafka with {} and {}'.format(type(inst), inst.args))
 
     def __output(self, data):
         # Output the results
         if 'grafana' in self.ede_cfg['out'].keys():
-            print('grafana')
+            print('todo grafana output')
         if 'kafka' in self.ede_cfg['out'].keys():
             self.__kafka_out(data)
 
@@ -149,6 +166,8 @@ class EDEScampEngine():
         if scaler: # if no scaler defined then return org data
             for k, v in scaler.items(): # TODO only one scaler is supported
                 scaler = getattr(importlib.import_module(self.mod_name), k)(**v)
+                self.__job_stat(f'Scaling data using {k}')
+                # self.job.meta['status'] = f'Scaling data using {k}'
                 resp_scaled = scaler.fit_transform(df)
             df_resp_scaled = pd.DataFrame(resp_scaled, index=df.index, columns=df.columns)
         else:
@@ -159,11 +178,15 @@ class EDEScampEngine():
         # Load the patterns
         pattern = self.ede_cfg['operators']['cycle_detect'].get('pattern', None)
         if pattern:
+            self.__job_stat('Loading cycle pattern')
+            # self.job.meta['status'] = 'Loading cycle pattern'
             df_pattern = pd.read_csv(os.path.join(self.etc_dir, pattern), index_col=0)
             if df_pattern.shape[1] > df_pattern.shape[0]: # Check if more rows than columns, if true transpose
                 df_pattern = df_pattern.T
             return df_pattern
         else:
+            self.__job_stat('No cycle pattern defined')
+            # self.job.meta['status'] = 'No cycle pattern defined'
             raise Exception('No pattern defined')
 
     def __heuristic_overlap(self,
@@ -171,6 +194,8 @@ class EDEScampEngine():
                             pattern):
         delta_bias = self.ede_cfg['operators']['cycle_detect'].get('delta_bias', None)
         if delta_bias:
+            self.__job_stat('Computing heuristic overlap')
+            # self.job.meta['status'] = 'Computing heuristic overlap'
             # Fileter based on heuristic and delta bias
             df_match = pd.DataFrame(matches, columns=["distance", "pd_id"])
             df_match['remove'] = 0  # marked for deletion
@@ -205,6 +230,8 @@ class EDEScampEngine():
 
             # Check model
             objects = client.list_objects(bucket, recursive=True)
+            self.__job_stat('Fetching minio models')
+            # self.job.meta['status'] = 'Fetching minio models'
             # print(model_name)
             for obj in objects:
                 print(obj.object_name)
@@ -217,6 +244,7 @@ class EDEScampEngine():
                     return False
 
         except Exception as inst:
+            self.__job_stat(f"Error while connecting to minion with {type(inst)} and {inst.args}")
             print(f"Error while connecting to minion with {type(inst)} and {inst.args}")
             return False
 
@@ -252,6 +280,8 @@ class EDEScampEngine():
                                       file_data,
                                       file_stat.st_size,
                                       )
+                # self.job.meta['status'] = f'Model {model_name} saved to minio'
+                self.__job_stat(f'Model {model_name} saved to minio')
                 return True
             except InvalidResponseError as err:
                 print(err)
@@ -259,6 +289,8 @@ class EDEScampEngine():
 
         except Exception as inst:
             print(f"Error while connecting to minion with {type(inst)} and {inst.args}")
+            # self.job.meta['status'] = f'Error while connecting to minion with {type(inst)} and {inst.args}'
+            self.__job_stat(f'Error while connecting to minion with {type(inst)} and {inst.args}')
             return False
 
     def __load_model(self, model_name):
@@ -272,15 +304,18 @@ class EDEScampEngine():
             bucket = self.minio_bucket
             try:
                 model = client.get_object(bucket, model_name)
-
+                self.__job_stat(f'Model {model_name} loaded from minio')
+                # self.job.meta['status'] = f'Model {model_name} loaded from minio'
                 with open(os.path.join(model_dir, model_name), 'wb') as file_data:
                     for d in model.stream(32 * 1024):
                         file_data.write(d)
             except InvalidResponseError as err:
-                print(err)
-            print(load(os.path.join(model_dir, model_name)))
+                self.__job_stat(f'Error while loading model {model_name} from minio with {err}')
+                # self.job.meta['status'] = f'Error while loading model {model_name} from minio'
             return load(os.path.join(model_dir, model_name))
         except Exception as inst:
+            self.__job_stat(f"Error while connecting to minion with {type(inst)} and {inst.args}")
+            # self.job.meta['status'] = f'Error while connecting to minion with {type(inst)} and {inst.args}'
             print(f"Error while connecting to minion with {type(inst)} and {inst.args}")
             return False
 
@@ -293,6 +328,8 @@ class EDEScampEngine():
         df_pattern = self.__load_pattern()
 
         # Cycle Detection
+        self.__job_stat('Started Cycle Detection')
+        # self.job.meta['status'] = 'Started Cycle Detection'
         max_distance = self.ede_cfg['operators']['cycle_detect'].get('max_distance', None)
         if max_distance is None:
             matches = stumpy.match(df_pattern[feature], df_data[feature])
@@ -362,12 +399,16 @@ class EDEScampEngine():
                 self.cdata = pd.DataFrame()
         else:
             tseries, matches, size_of_pattern = self.cycle_detection()
+        # self.job.meta['status'] = 'Computing DTW'
+        self.__job_stat('Computing DTW')
         print("Computing DTW")
         # Compute distance matrix with dtw
         distance_matrix = dtw.distance_matrix_fast(tseries)
 
         # Train clustering model
         print("Started training clusterer")
+        # self.job.meta['status'] = 'Creating HDDBSCAN model'
+        self.__job_stat('Creating HDDBSCAN model')
         clusterer = hdbscan.HDBSCAN(min_cluster_size=self.ede_cfg['operators']['cluster']['HDSCAN'].get('min_cluster_size', 30),
                                     metric='precomputed',
                                     # prediction_data=True, # TODO Not working for precomputed metric
@@ -398,6 +439,8 @@ class EDEScampEngine():
         tseries = []
         matches = []
         size_of_pattern = 0
+        # self.job.meta['status'] = 'Started Detection'
+        self.__job_stat('Started Detection')
         if self.ede_cfg['operators'].get('cluster', {}):
             tseries, matches, size_of_pattern = self.cycle_cluster_trainer()
         else:
@@ -407,6 +450,8 @@ class EDEScampEngine():
 
         pattern_list = []
         # test = 0
+        # self.job.meta['status'] = 'Generating output of detection'
+        self.__job_stat('Generating output of detection')
         for match_distance, id in matches:
             # print(self.cdata[id:id + size_of_pattern].iloc[0].labels)
             # Get the detected cycle
@@ -461,8 +506,6 @@ class EDEScampEngine():
                 self.__save_model(an_model, self.ede_cfg['operators']['anomaly']['model'])
         return tseries, matches, size_of_pattern
 
-
-
     def cycle_anomaly_inference(self, tseries=[],
                                 matches=[],
                                 size_of_pattern=0):
@@ -483,41 +526,28 @@ class EDEScampEngine():
         return tseries, matches, size_of_pattern
 
 
+if __name__ == '__main__':
+    data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+    etc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'etc')
+    model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models')
 
-data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
-etc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'etc')
-model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models')
+    ede_cfg_file = os.path.join(etc_dir, 'ede_engine.json')
+    source_cfg_file = os.path.join(etc_dir, 'source_cfg.yaml')
 
-# ede_cfg_file = "/Users/Gabriel/Documents/workspaces/scamp-ede-service/etc/ede_engine.json"
-ede_cfg_file = "/Users/Gabriel/Documents/workspaces/scamp-ede-service/etc/ede_engine_local.json"
-source_cfg_file = "/Users/Gabriel/Documents/workspaces/scamp-ede-service/etc/source_cfg.yaml"
+    with open(ede_cfg_file) as f:
+        ede_cfg = json.load(f)
+    with open(source_cfg_file) as f:
+        source_cfg = yaml.safe_load(f)
 
-with open(ede_cfg_file) as f:
-    ede_cfg = json.load(f)
-with open(source_cfg_file) as f:
-    source_cfg = yaml.safe_load(f)
-
-def ede_engine(ede_cfg):
-    # Load the data
-    ede = EDEScampEngine(ede_cfg, source_cfg, data_dir, etc_dir, model_dir)
-    # df = ede.load_data()
-    # df = ede.scale_data(df)
-    # ede.output('data')
-    # ede.cycle_detection()
-    # ede.cycle_cluster_trainer()
-    ede.detect()
-    # ede.cycle_anomaly_trainer(save=True)
-    # ede.cycle_anomaly_inference()
-
-
-
-
-
-
-# engine = EDEScampEngine(data_dir, etc_dir)
-# df = engine.load_data('test.csv')
-# print(df)
-
-ede_engine(ede_cfg)
+    def ede_engine(ede_cfg):
+        # Load the data
+        ede = EDEScampEngine(ede_cfg, source_cfg, data_dir, etc_dir, model_dir)
+        # df = ede.load_data()
+        # df = ede.scale_data(df)
+        # ede.output('data')
+        # ede.cycle_detection()
+        # ede.cycle_cluster_trainer()
+        ede.detect()
+    ede_engine(ede_cfg)
 
 
