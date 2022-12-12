@@ -1,6 +1,6 @@
 version: '2'
 services:
-    bd4nrg_ads:
+    scamp-ede:
         build: .
         ports:
             - "5001:5001"
