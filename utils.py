@@ -110,6 +110,14 @@ def get_list_data_files(data_folder):
         list_data_files.append(name.split('/')[-1])
     return list_data_files
 
+
+def delete_pid_file(file):
+    etc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'etc')
+    pid_loc = os.path.join(etc_path, file)
+    if os.path.isfile(pid_loc):
+        os.remove(pid_loc)
+
+
 def load_schema(file):
     etc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'etc')
     file_path = os.path.join(etc_path, file)

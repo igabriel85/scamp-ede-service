@@ -50,7 +50,9 @@ ALLOWED_PATTERN_EXTENSIONS = {'csv'}
 allowed_source = ['minio', 'ts', 'kafka', 'local']
 
 # redis connection
-r_connection = Redis(host='redis', port=6379)
+redis_end = os.getenv('REDIS_END', 'redis')
+redis_port = os.getenv('REDIS_PORT', 6379)
+r_connection = Redis(host=redis_end, port=redis_port)
 queue = rq.Queue('ede', connection=r_connection)  # TODO create 3 priority queues and make them selectable from REST call
 
 
@@ -129,10 +131,6 @@ class EngineScalerMM(marshmallow.Schema):
     MinMaxScaler = marshmallow.fields.Nested(MMScaler)
 
 
-# class EngineScaler(marshmallow.Schema):
-#     scaler = marshmallow.fields.Nested(EngineScalerMM)
-
-
 class EngineCycleDetect(marshmallow.Schema):
     pattern = marshmallow.fields.Str()
     max_distance = marshmallow.fields.Float()
@@ -166,10 +164,12 @@ class IFSchema(marshmallow.Schema):
     random_state = marshmallow.fields.Int()
     versbose = marshmallow.fields.Int()
 
+
 class EngineAnomalyIF(marshmallow.Schema):
     IForest = marshmallow.fields.Nested(IFSchema)
     mark = marshmallow.fields.Int()
     model = marshmallow.fields.Str()
+
 
 class EngineOperators(marshmallow.Schema):
     scaler = marshmallow.fields.Nested(EngineScalerMM)
@@ -177,17 +177,12 @@ class EngineOperators(marshmallow.Schema):
     anomaly = marshmallow.fields.Nested(EngineAnomalyIF)
     cycle_detect = marshmallow.fields.Nested(EngineCycleDetect)
 
+
 class EngineSchema(marshmallow.Schema):
     source = marshmallow.fields.Nested(LocalSource)
     out = marshmallow.fields.Nested(EngineOut)
     operators = marshmallow.fields.Nested(EngineOperators)
-    # cycle_detect = marshmallow.fields.Nested(EngineCycleDetect)
-    # cluster = marshmallow.fields.Nested(EngineClusterHDBSCAN)
-    # anomaly = marshmallow.fields.Nested(EngineAnomalyIF)
 
-
-
-################# Old ################
 
 class DataListSchema(marshmallow.Schema):
     # data = marshmallow.fields.Str()
@@ -196,29 +191,6 @@ class DataListSchema(marshmallow.Schema):
 
 class DataHandlerRemoteSchema(marshmallow.Schema):
     message = marshmallow.fields.Str()
-
-
-class DataHandlerConfigSchemaInner(marshmallow.Schema):
-    access_key = fields.String()
-    endpoint = fields.String()
-    secret_key = fields.String()
-    secure = fields.String()
-
-
-class DataHandlerConfigSchema(marshmallow.Schema):
-    minio = marshmallow.fields.Nested(DataHandlerConfigSchemaInner)
-
-# For payload
-aug_sequencer_resp = {
-    'ads': marshmallow.fields.Nested(
-        {
-            'operators': marshmallow.fields.Dict(keys=marshmallow.fields.Str(), values=marshmallow.fields.Str()),
-            'random_order': marshmallow.fields.Boolean()}),
-
-    'source': marshmallow.fields.Nested({'bucket_in': marshmallow.fields.Str(),
-                                           'bucket_out': marshmallow.fields.Str(),
-                                           'type': marshmallow.fields.Str()})
-}
 
 @doc(description='Library backend versions', tags=['status'])
 @marshal_with(StatusSchemaList(), code=200)
@@ -407,6 +379,7 @@ class ScampPattern(Resource, MethodResource):
         resp.status_code = 200
         return resp
 
+
 @doc(description='Add/remove patterns', tags=['engine'])
 class ScampPatternDetails(Resource, MethodResource):
     def get(self, pattern):
@@ -479,6 +452,7 @@ class ScampPatternDetails(Resource, MethodResource):
             resp.status_code = 404
             return resp
 
+
 @doc(description='Engine worker status', tags=['engine'])
 class EngineWorkers(Resource, MethodResource):
     def get(self):
@@ -519,7 +493,8 @@ class EngineWorkers(Resource, MethodResource):
             try:
                 kill_pid(pid)
             except Exception as inst:
-                log.error(f"Failed to stop pid {pid} with {inst}")
+                log.error(f"Failed to stop pid {pid} with {inst}, deleting file")
+                delete_pid_file(worker)
             # check if pid is killed
             if not check_pid(pid):
                 log.error(f"Failed to stop rq workers with pid {pid}")
@@ -540,6 +515,7 @@ class EngineWorkers(Resource, MethodResource):
         })
         resp.status_code = 200
         return resp
+
 
 @doc(description='Manage Engine Config', tags=['engine'])
 class ScampEdeEngine(Resource, MethodResource):
@@ -591,7 +567,6 @@ class EdeEngineRevertConfig(Resource, MethodResource):
     def post(self):
         config_file_old = os.path.join(etc_dir, 'ede_engine.yaml.old')
         config_file = os.path.join(etc_dir, 'ede_engine.yaml')
-        config_file
         if os.path.isfile(config_file_old):
             os.replace(config_file_old, config_file)
             resp = jsonify({
@@ -605,7 +580,124 @@ class EdeEngineRevertConfig(Resource, MethodResource):
             })
             resp.status_code = 404
             return resp
-##################
+
+
+@doc(description='Detection Handling', tags=['engine'])
+class EdeEngineDetect(Resource, MethodResource):
+    def post(self):
+        with open(os.path.join(etc_dir, 'ede_engine.yaml')) as f:
+            config_dict = yaml.safe_load(f)
+        with open(os.path.join(etc_dir, 'source_cfg.yaml')) as f:
+            source_dict = yaml.safe_load(f)
+
+        from ede_handler import ede_detect_handler
+        if request.is_json:
+            loop = request.json['loop']
+            period = request.json['period']
+        else:
+            loop = False
+            period = 0
+        mconf = {
+            'ede_cfg': config_dict,
+            'source_cfg': source_dict,
+            'loop': loop,
+            'period': period
+        }
+        job = queue.enqueue(ede_detect_handler, mconf)
+        resp = jsonify({
+            'job_id': job.get_id(),
+            'config': mconf
+        })
+        resp.status_code = 201
+        return resp
+
+
+@doc(description='Create Anomaly Detection Model', tags=['engine'])
+class EdeEngineAnomalyModel(Resource, MethodResource):
+    def post(self):
+        with open(os.path.join(etc_dir, 'ede_engine.yaml')) as f:
+            config_dict = yaml.safe_load(f)
+        with open(os.path.join(etc_dir, 'source_cfg.yaml')) as f:
+            source_dict = yaml.safe_load(f)
+
+            from ede_handler import ede_anomaly_trainer_handler
+            mconf = {
+                'ede_cfg': config_dict,
+                'source_cfg': source_dict,
+            }
+            job = queue.enqueue(ede_anomaly_trainer_handler, mconf)
+            resp = jsonify({
+                'job_id': job.get_id(),
+                'config': mconf
+            })
+            resp.status_code = 201
+            return resp
+
+
+@doc(description='EDE Engine Jobs', tags=['engine'])
+class EdeEngineJobQueueStatus(Resource, MethodResource):
+    def get(self):
+        try:
+            jobs = queue.get_job_ids()
+        except Exception as inst:
+            log.error(f'Error connecting to redis with {type(inst)} and {inst.args}')
+            resp = jsonify({
+                'error': f'Error connecting to redis with {type(inst)} and {inst.args}'
+            })
+            resp.status_code = 500
+            return resp
+        failed = queue.failed_job_registry.get_job_ids()
+        jqueued = []
+        started = queue.started_job_registry.get_job_ids()
+        finished = queue.finished_job_registry.get_job_ids()
+        for rjob in jobs:
+            try:
+                job = Job.fetch(rjob, connection=r_connection)
+            except:
+                log.error("No job with id {}".format(rjob))
+                response = {'error': 'no such job'}
+                return response
+            if job.is_finished:
+                finished.append(rjob)
+            elif job.is_failed:
+                failed.append(rjob)
+            elif job.is_started:
+                started.append(rjob)
+            elif job.is_queued:
+                jqueued.append(rjob)
+
+        resp = jsonify(
+            {
+                'started': started,
+                'finished': finished,
+                'failed': failed,
+                'queued': jqueued
+            }
+        )
+        resp.status_code = 200
+        return resp
+
+
+@doc(description='EDE Engine Job details', tags=['engine'])
+class EdeEngineJobStatus(Resource, MethodResource):
+    def get(self, job_id):
+        try:
+            job = Job.fetch(job_id, connection=r_connection)
+        except Exception as inst:
+            log.error("No job with id {}".format(job_id))
+            response = jsonify({'error': 'no job',
+                                'job_id': job_id})
+            response.status_code = 404
+            return response
+        job.refresh()
+        status = job.get_status()
+        finished = job.is_finished
+        meta = job.meta
+        response = jsonify({'status': status,
+                            'finished': finished,
+                            'meta': meta})
+        response.status_code = 200
+        return response
 
 
 @doc(description='List all data from local or remote', tags=['data'])
@@ -750,61 +842,6 @@ class DataHandlerRemote(Resource, MethodResource):
             return resp
 
 
-# @doc(description='Fetch remote data handler config', tags=['status'])
-# class DataHandlerConfig(Resource, MethodResource):
-#     @marshal_with(DataHandlerConfigSchema(), code=200)
-#     def get(self):  # TODO make it save by adding token based auth
-#         if check_file(config_file):
-#             config_dict = load_yaml(config_file)
-#             resp = jsonify(config_dict)
-#             resp.status_code = 200
-#             return resp
-#         else:
-#             log.error(f"No configuration file located")
-#             resp = jsonify({
-#                 'error': 'missing configuration file'
-#             })
-#             resp.status_code = 500
-#
-#     @use_kwargs({'access_key': marshmallow.fields.Str(),
-#                  'endpoint': marshmallow.fields.Str(),
-#                  'secret_key': marshmallow.fields.Str(),
-#                  'secure': marshmallow.fields.Str()
-#                  }, apply=False)
-#     @marshal_with(DataHandlerConfigSchema(), code=201)
-#     def put(self):
-#         if not request.is_json:
-#             log.error(f"Payload is not JSON!")
-#             resp = jsonify({
-#                 'error': f"Payload is not JSON!"
-#             })
-#             resp.status_code = 400
-#             return resp
-#         else:
-#             try:
-#                 new_config = {
-#                     'minio':
-#                         {
-#                             'access_key': request.json.get('access_key'),
-#                             'endpoint': request.json.get('endpoint'),
-#                             'secret_key': request.json.get('secret_key'),
-#                             'secure': request.json.get('secure')
-#                         }
-#                 }
-#             except Exception as inst:
-#                 log.error(f"Error while parsing new config with {type(inst)} and {inst.args}")
-#                 resp = jsonify({
-#                     'error': f"Error while parsing new config with {type(inst)} and {inst.args}"
-#                 })
-#                 resp.status_code = 400
-#                 return resp
-#         save_config_yaml(new_config)
-#         log.info(f"Saved new configuration file")
-#         resp = jsonify(new_config)
-#         resp.status_code = 201
-#         return resp
-
-
 # Rest API routing
 api.add_resource(ScampStatus, "/v1/ede")
 api.add_resource(ScampDataSource, "/v1/source")
@@ -814,14 +851,17 @@ api.add_resource(DataHandlerLocal, "/v1/source/local/<string:data>")
 
 api.add_resource(ScampEdeEngine, "/v1/ede/config")
 api.add_resource(EdeEngineRevertConfig, "/v1/ede/config/revert")
-# api.add_resource(ScampEdeEngine, "/v1/ede/jobs")
+api.add_resource(EdeEngineJobQueueStatus, "/v1/ede/jobs")
+api.add_resource(EdeEngineJobStatus, "/v1/ede/jobs/<string:job_id>")
+api.add_resource(EdeEngineDetect, "/v1/ede/detect")
+api.add_resource(EdeEngineAnomalyModel, "/v1/ede/anomaly")
 api.add_resource(ScampPattern, "/v1/ede/pattern")
 api.add_resource(ScampPatternDetails, "/v1/ede/pattern/<string:pattern>")
 api.add_resource(EngineWorkers, "/v1/ede/workers")
 
 api.add_resource(DataHandlerViz, "/v1/source/<string:source>")
 api.add_resource(DataHandlerRemote, "/v1/source/remote/<string:data>")
-# api.add_resource(DataHandlerConfig, "/v1/source/remote/config")
+
 
 
 # Rest API docs, Swagger
@@ -831,6 +871,10 @@ docs.register(ScampDataSourceDetails)
 docs.register(ScampPattern)
 docs.register(ScampPatternDetails)
 docs.register(ScampEdeEngine)
+docs.register(EdeEngineDetect)
+docs.register(EdeEngineAnomalyModel)
+docs.register(EdeEngineJobQueueStatus)
+docs.register(EdeEngineJobStatus)
 docs.register(EdeEngineRevertConfig)
 docs.register(EngineWorkers)
 

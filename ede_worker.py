@@ -2,8 +2,12 @@
 from redis import Redis
 from rq import Worker, Queue, Connection
 from utils import load_yaml, save_pid, clean_up_pid
+import os
 
-r_connection = Redis(host='redis', port=6379)
+redis_end = os.getenv('REDIS_END', 'redis')
+redis_port = os.getenv('REDIS_PORT', 6379)
+
+r_connection = Redis(host=redis_end, port=redis_port)
 if __name__ == '__main__':
     config = load_yaml('worker.yaml')
     with Connection(connection=r_connection):

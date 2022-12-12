@@ -7,7 +7,10 @@
   },
   "out": {
     "grafana": {},
-    "kafka": {}
+    "kafka": {
+        "topic": "ede_events",
+        "broker": "kafka:9092"
+    }
   },
   "operators": {
     "scaler": {
@@ -19,35 +22,34 @@
     "cycle_detect": {
       "pattern": "df_pattern_d355.csv",
       "max_distance": 10.0,
-      "mark": "True",
+      "checkpoint": 1,
       "delta_bias": 10.0
     },
 
     "cluster": {
       "HDSCAN": {
-        "min_cluster_size": 5,
+        "min_cluster_size": 30,
         "min_samples": 5,
-        "metric": "dtw",
         "algorithm": "best",
-        "leaf_size": 30,
-        "p": null
+        "leaf_size": 30
       },
-      "mark": "True"
+      "bootstrap": 0,
+      "model": "hdbscan_d355.joblib"
     },
     "anomaly": {
-      "IsolationForest": {
+      "iforest.IForest": {
         "n_estimators": 100,
         "max_samples": "auto",
-        "contamination": "auto",
+        "contamination": 0.05,
         "max_features": 1.0,
-        "bootstrap": "False",
+        "bootstrap": 0,
         "n_jobs": -1,
         "behaviour": "new",
         "random_state": null,
-        "verbose": 0,
-        "warm_start": "False"
+        "verbose": 0
       },
-      "mark": "True"
+      "mark": 0,
+      "model": "iforest_d355.joblib"
     }
   }
 }
