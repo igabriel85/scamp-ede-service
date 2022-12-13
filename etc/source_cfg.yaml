@@ -3,10 +3,11 @@ source:
   ts_source:
      host: https://influxdb.services.scamp.roiot.ro
      port: 8086
-     token: "4kF2LkIAl_8Z6EnyF31Qd4paxQeDaTayCs0-onBQVlt5V1jWu82KSRg6AI0mwbh8-91S-C-z7ztqLSFIFochsQ=="
-     bucket: primary
+     token: ejwf0maRkkxuDpit4HmbKiIhLbxFbvS1sUDcZdasfX7-A41pxf8QpYP-rQr2aHrj9bZWywhNkF-9t2n394BwQg==
+     org: scamp
+     bucket: sensors
   minio_source:
-     host: 10.9.8.136:9000
+     host: hal720m.sage.ieat.ro:9000
      access_key: cULsrWyoxO87kDpN
      secret_key: 2MMynfJBJjjJifAT1GBD58JNkalZf9Lg
      secure: False

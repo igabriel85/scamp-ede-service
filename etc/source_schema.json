@@ -61,6 +61,9 @@
             "token": {
               "type": "string"
             },
+            "org": {
+              "type": "string"
+            },
             "query": {
               "type": "string"
             }
@@ -69,6 +72,7 @@
             "bucket",
             "host",
             "port",
+            "org",
             "token"
           ]
         }

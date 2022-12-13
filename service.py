@@ -192,6 +192,7 @@ class DataListSchema(marshmallow.Schema):
 class DataHandlerRemoteSchema(marshmallow.Schema):
     message = marshmallow.fields.Str()
 
+
 @doc(description='Library backend versions', tags=['status'])
 @marshal_with(StatusSchemaList(), code=200)
 class ScampStatus(Resource, MethodResource):

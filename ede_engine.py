@@ -126,12 +126,13 @@ class EDEScampEngine():
                                     token=self.source_cfg['source']['ts_source']['token'],
                                     org=self.source_cfg['source']['ts_source'].get('org', 'scamp'))
             query = self.ede_cfg['source']['ts_source']['query']
+            feature = self.ede_cfg['source']['ts_source'].get("feature", "_value")
             self.__job_stat('Loading influxdb data')
 
             df = client.query_api().query_data_frame(query)
-            df['time'] = pd.to_datetime(df['time'])
-            df.set_index('time', inplace=True)
-            df = self.__scale_data(df)
+            df['_time'] = pd.to_datetime(df['_time'])
+            df.set_index('_time', inplace=True)
+            df = self.__scale_data(df[feature])
             return df
         except Exception as inst:
             print(f'Error loading data from influxdb with {type(inst)} and {inst.args}')
