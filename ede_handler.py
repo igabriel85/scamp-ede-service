@@ -5,7 +5,6 @@ import os
 import numpy as np
 np.random.seed(42)
 
-
 data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 etc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'etc')
 model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models')
