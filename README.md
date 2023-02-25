@@ -6,6 +6,10 @@ run cycle detection/identification and analysis tasks.
 
 ## Architecture
 
+ToDo
+
+## REST API
+
 ### Status
 This resource provides information about the current state of the service.
 
@@ -86,7 +90,8 @@ Returns the current configuration of the engine. An example response can be foun
     "kafka": {
       "broker": "kafka:9092",
       "topic": "ads_events"
-    }
+    },
+    "influxdb": "ede"
   },
   "source": {
     "local": "dev355.csv"
@@ -103,11 +108,12 @@ The configuration file is split up into several subsections:
 * __out__ - Deals with the output of the engine. Currently we support:
   * __kafka__ - Output to a Kafka topic.
   * __grafana__ - Output to a Grafana dashboard.
+  * __influxdb__ - Output to an InfluxDB database. Must specify bucket for output.
 * __operators__ - Deals with the operators that are used in the engine. Currently we support:
   * __scaler__ - Scaling operator as defined in scikit-learn [documentation](https://scikit-learn.org/stable/modules/preprocessing.html). All scaling and normalization methods are supported.
   * __anomaly__ - Anomaly detection methods. All methods supported by PyOD. In the current example we see how an Isolation Forest model can be trained. For further details please consult the offical PyOD [documentation](https://pyod.readthedocs.io/en/latest/index.html).
   * __cluster__ - Clustering methods. Current version supports only DBSCAN, Optics and HDBSCAN.
-  * __cycle_detect__ - Cycle detection method. The above example show how that users have to define a known good pattern and the _max_distance_ and _delta_bias_ parameters used for filtering of overlapping cycles.
+  * __cycle_detect__ - Cycle detection method. The above example show how that users have to define a known good pattern and the _max_distance_ and _delta_bias_ parameters used for filtering of overlapping cycles. It is possible to add a query string in case of _ts_source_. This will allow on the fly pattern definition.
 
 `PUT /v1/ede/config`
 
@@ -123,6 +129,16 @@ Start the detection based around the engine configuration. There are several pre
 * All sources have to be defined. See __Source__ section for more details.
 * REDIS workers have to be up and running. See resource `/v1/ede/worker` for more details.
 * A pattern has to be defined. See resource `/v1/ede/pattern` for more details.
+
+Resource payload has contains if only a single detection cycle should be executed or a continuaously
+execution. In the case of contonuous execution the polling period has to be defined. The JSON payload example can be found bellow:
+
+```json
+    {
+    "loop": true,
+    "period": 60
+    }
+```
 
 `GET /v1/ede/jobs`
 
@@ -151,6 +167,10 @@ An example response can be seen bellow:
 }
 ```
 
+`DELETE /v1/ede/jobs`
+
+Deletes all jobs including currently executing ones which it terminates before removing from all registries.
+
 `GET /v1/ede/jobs/<job_id>`
 
 This resource returns information about a job based on the jobs uuid. Each analysis and detection step is logged in and an appropriate message will appear in the _meta_ section of the JSON response.
@@ -165,6 +185,10 @@ An example can be seen bellow:
   "status": "started"
 }
 ```
+
+`DELETE /v1/ede/jobs/<job_id>`
+
+Deletes a job based on the jobs uuid including currently executing ones which it terminates before removing from all registries.
 
 `GET /v1/ede/pattern`
 
@@ -295,7 +319,6 @@ This resource is used to upload data to the remote data source. The __source__ p
 
 __NOTE__: Additional resource for listing data available in remote data sources are not yet implemented. Data source should be configured separately. 
 
-## REST API
 
 ## Usage
 
