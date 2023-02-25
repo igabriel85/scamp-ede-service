@@ -31,6 +31,8 @@ import psutil
 from redis import Redis
 import rq
 from rq.job import Job
+from rq import cancel_job
+from rq.command import send_stop_job_command
 from app import *
 from utils import *
 import json
@@ -191,6 +193,11 @@ class DataListSchema(marshmallow.Schema):
 
 class DataHandlerRemoteSchema(marshmallow.Schema):
     message = marshmallow.fields.Str()
+
+
+class DetectionSchema(marshmallow.Schema):
+    loop = marshmallow.fields.Int()
+    period = marshmallow.fields.Int()
 
 
 @doc(description='Library backend versions', tags=['status'])
@@ -584,6 +591,7 @@ class EdeEngineRevertConfig(Resource, MethodResource):
 
 
 @doc(description='Detection Handling', tags=['engine'])
+@use_kwargs(DetectionSchema(), apply=False)
 class EdeEngineDetect(Resource, MethodResource):
     def post(self):
         with open(os.path.join(etc_dir, 'ede_engine.yaml')) as f:
@@ -596,15 +604,15 @@ class EdeEngineDetect(Resource, MethodResource):
             loop = request.json['loop']
             period = request.json['period']
         else:
-            loop = False
-            period = 0
+            loop = False # for testing is set to false
+            period = 0 # for testinf it is set to 20
         mconf = {
             'ede_cfg': config_dict,
             'source_cfg': source_dict,
             'loop': loop,
             'period': period
         }
-        job = queue.enqueue(ede_detect_handler, mconf)
+        job = queue.enqueue(ede_detect_handler, mconf, job_timeout=-1)
         resp = jsonify({
             'job_id': job.get_id(),
             'config': mconf
@@ -678,6 +686,45 @@ class EdeEngineJobQueueStatus(Resource, MethodResource):
         resp.status_code = 200
         return resp
 
+    def delete(self):
+        try:
+            jobs = queue.get_job_ids()
+        except Exception as inst:
+            log.error(f'Error connecting to redis with {type(inst)} and {inst.args}')
+            resp = jsonify({
+                'error': f'Error connecting to redis with {type(inst)} and {inst.args}'
+            })
+            resp.status_code = 500
+            return resp
+        for rjob in jobs:
+            try:
+                job = Job.fetch(rjob, connection=r_connection)
+            except:
+                log.error("No job with id {}".format(rjob))
+                response = {'error': 'no such job'}
+                return response
+            job.delete()
+
+        failed_registry = queue.failed_job_registry
+        started_registry = queue.started_job_registry
+
+        for rjob in failed_registry.get_job_ids():
+            failed_registry.remove(rjob, delete_job=True)
+
+        for rjob in started_registry.get_job_ids():
+            send_stop_job_command(r_connection, rjob)
+            cancel_job(rjob, connection=r_connection)
+            # job = Job.fetch(rjob, connection=r_connection)
+            # job.cancel()
+            started_registry.remove(rjob, delete_job=True)
+        resp = jsonify(
+            {
+                'message': 'All jobs deleted'
+            }
+        )
+        resp.status_code = 200
+        return resp
+
 
 @doc(description='EDE Engine Job details', tags=['engine'])
 class EdeEngineJobStatus(Resource, MethodResource):
@@ -697,6 +744,22 @@ class EdeEngineJobStatus(Resource, MethodResource):
         response = jsonify({'status': status,
                             'finished': finished,
                             'meta': meta})
+        response.status_code = 200
+        return response
+
+    def delete(self, job_id):
+        try:
+            job = Job.fetch(job_id, connection=r_connection)
+        except Exception as inst:
+            log.error("No job with id {}".format(job_id))
+            response = jsonify({'error': 'no job',
+                                'job_id': job_id})
+            response.status_code = 404
+            return response
+        send_stop_job_command(r_connection, job_id)
+        job.delete()
+        response = jsonify({'status': 'deleted',
+                            'job_id': job_id})
         response.status_code = 200
         return response
 
