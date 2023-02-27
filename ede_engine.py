@@ -144,7 +144,9 @@ class EDEScampEngine():
             return df
         except Exception as inst:
             self.__job_stat('Error loading data from influxdb')
-            raise(f'Error loading data from influxdb with {type(inst)} and {inst.args}')
+            print(f'Error loading data from influxdb with {type(inst)} and {inst.args}')
+            return pd.DataFrame()
+
 
 
     def __kafka_out(self, body):
