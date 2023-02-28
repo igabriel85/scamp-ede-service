@@ -12,6 +12,7 @@ from kafka import KafkaProducer
 from dtaidistance import dtw
 import hdbscan
 from joblib import dump, load
+from statistics import mean
 
 # from logging import getLogger
 # log = getLogger(__name__)
@@ -148,7 +149,6 @@ class EDEScampEngine():
             return pd.DataFrame()
 
 
-
     def __kafka_out(self, body):
         # Output the results to kafka
         try:
@@ -175,6 +175,7 @@ class EDEScampEngine():
                 self.__job_stat('Creating Influxdb bucket')
                 self.create_influxdb_bucket(client=client, bucket_name='ede',
                                             org=self.source_cfg['source']['ts_source'].get('org', 'scampml'))
+                print("Bucket created")
             device_id = query.split("r[\"_measurement\"] ==")[1].split(")")[0].strip().replace("\"", "")
             self.__job_stat('Pushing data to influxdb')
             write_client = client.write_api(write_options=WriteOptions(batch_size=2,
@@ -341,6 +342,64 @@ class EDEScampEngine():
             df_match.drop(['remove', 'diff'], axis=1, inplace=True)
             matches = df_match.to_numpy()
             return matches
+        else:
+            return matches
+
+    def __heuristic_overlap_v2(self,
+                               df,
+                               pattern
+                               ):
+        delta_bias = self.ede_cfg['operators']['cycle_detect'].get('delta_bias', None)
+        if delta_bias:
+            # df.insert(0, 'id', range(0, len(df)))
+            df.reset_index(inplace=True)
+            length_range = len(pattern)-delta_bias
+            remove_index = []
+            last = None
+            for row in df.itertuples():
+                if row.dtw_detect == 1:
+                    if last is None:
+                        last = row.Index
+                    else:
+                        if row.Index - last < length_range:
+                            remove_index.append(row.Index)
+                        else:
+                            last = row.Index
+            for ri in remove_index:
+                df.loc[ri, "dtw_detect"] = 0
+            return df
+        else:
+            return df
+
+    def __iterate_windown_dataframe(self, df,
+                                    window_size,
+                                    stride=1):
+        tseries = []
+        for i in range(0, len(df), stride):
+            tseries.append(df.iloc[i:i + window_size])
+        return tseries
+
+    def __dtw_cyle_detect(self,
+                          df,
+                          pattern,
+                          max_distance=60000,
+                          window=100):
+        self.__job_stat('Detecting cycles using dtw')
+        score = []
+        tseries = self.__iterate_windown_dataframe(df, len(pattern))
+        for t in tseries:
+            score.append(dtw.distance_fast(np.asarray(t), np.asarray(pattern), window=window, use_pruning=True))
+        if max_distance < 20:
+            self.__job_stat(f'Max distance is to low for dtw cycle detection, mean score is {mean(score)}')
+            import sys
+            sys.exit(1)
+        df = df.to_frame() # Convert to dataframe from series
+        df['dtw_score'] = score
+        df['dtw_detect'] = 0
+        # df.loc[df.dtw_score < max_distance].dtw_detect = 1
+        df.loc[df["dtw_score"] < max_distance, "dtw_detect"] = 1
+        df_detect = df[df['dtw_detect'] == 1]
+        return df, df_detect
 
     def __allowed_file(self, filename):
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in self.allowed_extensions
@@ -467,51 +526,77 @@ class EDEScampEngine():
         self.__job_stat('Started Cycle Detection')
         # self.job.meta['status'] = 'Started Cycle Detection'
         max_distance = self.ede_cfg['operators']['cycle_detect'].get('max_distance', None)
+        dtw = self.ede_cfg['operators']['cycle_detect'].get('dtw', None)
         if max_distance is None:
-            matches = stumpy.match(df_pattern[feature], df_data[feature])
+            print(f"------> {df_pattern.shape}, {df_data.shape}")
+            if dtw is None:
+                matches = stumpy.match(df_pattern[feature], df_data[feature])
+                len_matches = len(matches)
+            else:
+                matches, detect = self.__dtw_cyle_detect(df_data[feature], df_pattern[feature])
+                len_matches = detect.shape[0]
+
         else:
             print(f"------> {df_pattern.shape}, {df_data.shape}")
-            matches = stumpy.match(df_pattern[feature], df_data[feature], max_distance=max_distance)
-        print(f"Total cycles: {len(matches)}")
+            if dtw is None:
+                matches = stumpy.match(df_pattern[feature], df_data[feature], max_distance=max_distance)
+                len_matches = len(matches)
+            else:
+                matches, detect = self.__dtw_cyle_detect(df_data[feature], df_pattern[feature], max_distance=max_distance)
+                len_matches = detect.shape[0]
 
-        if len(matches) < 1:
+        print(f"Total cycles: {len_matches}")
+
+        if len_matches < 1:
             return 0, 0, 0
-        matches = self.__heuristic_overlap(matches, df_pattern[feature])
-        print(f"Total cycles after heuristic: {len(matches)}")
-        size_of_pattern = len(df_pattern[feature])
-        # Store matched cycles
-        tseries = []  # store matched cycles
-        for match_distance, match_idx in matches:
-            match_z_norm = stumpy.core.z_norm(
-                df_data[feature].values[match_idx:match_idx + size_of_pattern])
-            tseries.append(match_z_norm)
-        # Manually add feature
 
-        self.cdata['detected'] = 0
+        if dtw is None:
+            matches = self.__heuristic_overlap(matches, df_pattern[feature])
+            print(f"Total cycles after heuristic: {len(matches)}")
+            size_of_pattern = len(df_pattern[feature])
+            # Store matched cycles
+            tseries = []  # store matched cycles
+            for match_distance, match_idx in matches:
+                match_z_norm = stumpy.core.z_norm(
+                    df_data[feature].values[match_idx:match_idx + size_of_pattern])
+                tseries.append(match_z_norm)
+            # Manually add feature
 
-        pattern_list = []
-        tseries = []
-        for match_distance, id in matches:
+            self.cdata['detected'] = 0
 
-            # # Get the detected cycle
-            # pattern_list.append({'start': self.cdata[id:id + size_of_pattern].iloc[0].name,
-            #                      'end': self.cdata[id:id + size_of_pattern].iloc[-1].name,
-            #                      'cycle': True})
+            pattern_list = []
+            tseries = []
+            for match_distance, id in matches:
+                # # Get the detected cycle
+                # pattern_list.append({'start': self.cdata[id:id + size_of_pattern].iloc[0].name,
+                #                      'end': self.cdata[id:id + size_of_pattern].iloc[-1].name,
+                #                      'cycle': True})
 
+                # Change value based on iloc value
+                self.cdata.iloc[id, self.cdata.columns.get_loc('detected')] = 1.0
 
-            # Change value based on iloc value
-            self.cdata.iloc[id, self.cdata.columns.get_loc('detected')] = 1.0
+                # Save detected cycles as numpy array
+                tseries.append(stumpy.core.z_norm(self.cdata[feature].values[
+                                                  id:id + size_of_pattern]))
 
-            # Save detected cycles as numpy array
-            tseries.append(stumpy.core.z_norm(self.cdata[feature].values[
-                               id:id + size_of_pattern]))
-
+        else:
+            matches = self.__heuristic_overlap_v2(matches, df_pattern[feature])
+            print(f"Total cycles after heuristic v2: {matches[matches['dtw_detect'] == 1].shape[0]}")
+            size_of_pattern = len(df_pattern[feature])
+            # Store matched cycles
+            df_matches = matches[matches['dtw_detect'] == 1]
+            tseries = []  # store matched cycles
+            for index in df_matches.index:
+                tseries.append(matches.iloc[index:index + size_of_pattern]['_value'].values)
+            self.cdata['detected'] = matches['dtw_detect'].values
+            # matches.set_index('_time', inplace=True)
 
         #  Save data for bootstrapping
         if self.ede_cfg['operators']['cycle_detect'].get('checkpoint', False):
             df_cycles = pd.DataFrame(np.array(tseries))
             df_cycles.to_csv(os.path.join(self.data_dir, 'cycles.csv'))
-            df_matches = pd.DataFrame(matches, columns=['Match_distance', 'id'])
+            if dtw is None:
+                df_matches = pd.DataFrame(matches, columns=['Match_distance', 'id'])
             df_matches.to_csv(os.path.join(self.data_dir, 'matches.csv'))
             # self.cdata.drop(['detected'], axis=1).to_csv(os.path.join(self.data_dir, 'data.csv'))
             self.cdata.to_csv(os.path.join(self.data_dir, 'data.csv'))
@@ -583,6 +668,7 @@ class EDEScampEngine():
         # self.job.meta['status'] = 'Started Detection'
         self.__job_stat('Started Detection')
         self.__job_config(self.ede_cfg)
+        dtw = self.ede_cfg['operators']['cycle_detect'].get('dtw', None)
         if self.ede_cfg['operators'].get('cluster', {}):
             tseries, matches, size_of_pattern = self.cycle_cluster_trainer()
         else:
@@ -596,30 +682,46 @@ class EDEScampEngine():
         # test = 0
         # self.job.meta['status'] = 'Generating output of detection'
         self.__job_stat('Generating output of detection')
-        for match_distance, id in matches:
-            # print(self.cdata[id:id + size_of_pattern].iloc[0].labels)
-            # Get the detected cycle
-            pattern = {'start': self.cdata[id:id + size_of_pattern].iloc[0].name,
-                       'end': self.cdata[id:id + size_of_pattern].iloc[-1].name,
-                       'cycle': True,
-                       # 'cluster': self.cdata[id:id + size_of_pattern].iloc[0].labels
-                       }
-            try:
-                pattern['cluster'] = self.cdata[id:id + size_of_pattern].iloc[0].labels
-            except Exception as e:
-                # print(f"No clusterer predictions")
-                pattern['cluster'] = None
+        if dtw is None:
+            for match_distance, id in matches:
+                # print(self.cdata[id:id + size_of_pattern].iloc[0].labels)
+                # Get the detected cycle
+                pattern = {'start': self.cdata[id:id + size_of_pattern].iloc[0].name,
+                           'end': self.cdata[id:id + size_of_pattern].iloc[-1].name,
+                           'cycle': True,
+                           # 'cluster': self.cdata[id:id + size_of_pattern].iloc[0].labels
+                           }
+                try:
+                    pattern['cluster'] = self.cdata[id:id + size_of_pattern].iloc[0].labels
+                except Exception as e:
+                    # print(f"No clusterer predictions")
+                    pattern['cluster'] = None
 
-            try:
-                pattern['anomaly'] = self.cdata[id:id + size_of_pattern].iloc[0].anomaly
-            except Exception as e:
-                # print(f"No anomaly predictions")
-                pattern['anomaly'] = None
-            pattern_list.append(pattern)
+                try:
+                    pattern['anomaly'] = self.cdata[id:id + size_of_pattern].iloc[0].anomaly
+                except Exception as e:
+                    # print(f"No anomaly predictions")
+                    pattern['anomaly'] = None
+                pattern_list.append(pattern)
+        else:
+            for index in matches[matches['dtw_detect'] == 1].index:
+                pattern = {'start': self.cdata[index:index + size_of_pattern].iloc[0].name,
+                           'end': self.cdata[index:index + size_of_pattern].iloc[-1].name,
+                           'cycle': True,
+                           # 'cluster': self.cdata[id:id + size_of_pattern].iloc[0].labels
+                           }
+                try:
+                    pattern['cluster'] = self.cdata[index:index + size_of_pattern].iloc[0].labels
+                except Exception as e:
+                    # print(f"No clusterer predictions")
+                    pattern['cluster'] = None
 
-            # test += 1
-            # if test > 10:
-            #     break
+                try:
+                    pattern['anomaly'] = self.cdata[index:index + size_of_pattern].iloc[0].anomaly
+                except Exception as e:
+                    # print(f"No anomaly predictions")
+                    pattern['anomaly'] = None
+                pattern_list.append(pattern)
         detected_cycles = {'cycles': pattern_list}
         # print(detected_cycles)
         # send data to output

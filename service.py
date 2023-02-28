@@ -138,6 +138,7 @@ class EngineCycleDetect(marshmallow.Schema):
     max_distance = marshmallow.fields.Float()
     checkpoint = marshmallow.fields.Int()
     delta_bias = marshmallow.fields.Float()
+    dtw = marshmallow.fields.Bool()
 
 
 class HDBSCANSchema(marshmallow.Schema):
