@@ -114,6 +114,7 @@ The configuration file is split up into several subsections:
   * __anomaly__ - Anomaly detection methods. All methods supported by PyOD. In the current example we see how an Isolation Forest model can be trained. For further details please consult the offical PyOD [documentation](https://pyod.readthedocs.io/en/latest/index.html).
   * __cluster__ - Clustering methods. Current version supports only DBSCAN, Optics and HDBSCAN.
   * __cycle_detect__ - Cycle detection method. The above example show how that users have to define a known good pattern and the _max_distance_ and _delta_bias_ parameters used for filtering of overlapping cycles. It is possible to add a query string in case of _ts_source_. This will allow on the fly pattern definition.
+    * __dtw__ - Dynamic Time Warping based cycle detection method will be used if this parameter is set to True. As scoring is different _max_distance_ has to have a larger value. If the value is to small the job will fail.
 
 `PUT /v1/ede/config`
 
@@ -154,7 +155,7 @@ An example response can be seen bellow:
     "6cf4bafc-fad4-40dd-bcd8-e719d0772159",
     "6b9a9706-acb8-4084-93b4-7288d70e58e5",
     "fab19623-4bc4-40f8-b0bb-dcbca47b9911",
-    "3ecb430c-313b-4802-8764-0812422c7e83",
+    "3ecb430c-313b-4802-8764-0812422c7e83"
   ],
   "queued": [
     "d118ca0c-e890-420d-a82b-a19476412582"
@@ -174,13 +175,53 @@ Deletes all jobs including currently executing ones which it terminates before r
 `GET /v1/ede/jobs/<job_id>`
 
 This resource returns information about a job based on the jobs uuid. Each analysis and detection step is logged in and an appropriate message will appear in the _meta_ section of the JSON response.
+The _meta_ section also contains the configuration used for the job.
+
 An example can be seen bellow:
 
 ```json
 {
   "finished": false,
   "meta": {
-    "progress": "Computing heuristic overlap"
+    "progress": "Computing heuristic overlap",
+    "config" : {
+        "source": {
+            "local": "dev355.csv"
+        },
+        "out": {
+            "grafana": {},
+            "kafka": {
+            "broker": "kafka:9092",
+            "topic": "ads_events"
+            },
+            "influxdb": "ede"
+        },
+        "operators": {
+            "scaler": {
+            "method": "minmax"
+            },
+            "anomaly": {
+            "method": "iforest",
+            "params": {
+                "n_estimators": 100,
+                "max_samples": 256,
+                "contamination": 0.1
+            }
+            },
+            "cluster": {
+            "method": "dbscan",
+            "params": {
+                "eps": 0.5,
+                "min_samples": 5
+            }
+            },
+            "cycle_detect": {
+            "pattern": "pattern_d355.csv",
+            "max_distance": 0.5,
+            "delta_bias": 0.1
+            }
+        }
+    }
   },
   "status": "started"
 }
