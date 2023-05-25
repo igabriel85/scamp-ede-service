@@ -114,7 +114,7 @@ The configuration file is split up into several subsections:
   * __anomaly__ - Anomaly detection methods. All methods supported by PyOD. In the current example we see how an Isolation Forest model can be trained. For further details please consult the offical PyOD [documentation](https://pyod.readthedocs.io/en/latest/index.html).
   * __cluster__ - Clustering methods. Current version supports only DBSCAN, Optics and HDBSCAN.
   * __cycle_detect__ - Cycle detection method. The above example show how that users have to define a known good pattern and the _max_distance_ and _delta_bias_ parameters used for filtering of overlapping cycles. It is possible to add a query string in case of _ts_source_. This will allow on the fly pattern definition.
-    * __dtw__ - Dynamic Time Warping based cycle detection method will be used if this parameter is set to True. As scoring is different _max_distance_ has to have a larger value. If the value is to small the job will fail.
+    * __dtw__ - Dynamic Time Warping based cycle detection method will be used if this parameter is set to True. Initialy if scoring is different _max_distance_ had to have a larger value. If the value was to small the job would fail. To limit this issue now _max_distance_ reprezents a percentage of the median score. This will allow for more flexibility in the cycle detection process.
 
 `PUT /v1/ede/config`
 

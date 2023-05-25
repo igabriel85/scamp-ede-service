@@ -12,7 +12,8 @@ from kafka import KafkaProducer
 from dtaidistance import dtw
 import hdbscan
 from joblib import dump, load
-from statistics import mean
+from statistics import mean, median
+from utils import percentage
 
 # from logging import getLogger
 # log = getLogger(__name__)
@@ -190,13 +191,13 @@ class EDEScampEngine():
                 write_client.write(bucket="ede",
                                    record=Point(device_id).tag("device_id", device_id).tag("cycle", "start").field(
                                        "value", 1.0).time(detect['start'],
-                                                          # WritePrecision.NS
+                                                          WritePrecision.NS
                                                           ))
                 print(f"-----> Cycle end {detect['end']}")
                 write_client.write(bucket="ede",
                                    record=Point(device_id).tag("device_id", device_id).tag("cycle", "end").field(
                                        "value", 2.0).time(detect['end'],
-                                                          # WritePrecision.NS
+                                                          WritePrecision.NS
                                                           ))
             client.close()
         except Exception as inst:
@@ -382,22 +383,24 @@ class EDEScampEngine():
     def __dtw_cyle_detect(self,
                           df,
                           pattern,
-                          max_distance=60000,
+                          max_distance=30,
                           window=100):
         self.__job_stat('Detecting cycles using dtw')
         score = []
         tseries = self.__iterate_windown_dataframe(df, len(pattern))
         for t in tseries:
             score.append(dtw.distance_fast(np.asarray(t), np.asarray(pattern), window=window, use_pruning=True))
-        if max_distance < 20:
-            self.__job_stat(f'Max distance is to low for dtw cycle detection, mean score is {mean(score)}')
+        score_median = median(score)
+        if max_distance > 90:
+            self.__job_stat(f'Max distance is to low for dtw cycle detection, mean score is {score_median}')
             import sys
             sys.exit(1)
         df = df.to_frame() # Convert to dataframe from series
         df['dtw_score'] = score
         df['dtw_detect'] = 0
         # df.loc[df.dtw_score < max_distance].dtw_detect = 1
-        df.loc[df["dtw_score"] < max_distance, "dtw_detect"] = 1
+        treashold = score_median - percentage(max_distance, score_median)
+        df.loc[df["dtw_score"] < treashold, "dtw_detect"] = 1
         df_detect = df[df['dtw_detect'] == 1]
         return df, df_detect
 
