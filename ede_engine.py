@@ -649,15 +649,21 @@ class EDEScampEngine():
         labels = clusterer.labels_
         print(f"Unique clusters: {np.unique(labels, return_counts=True)}")
 
-        # Add clustered data
-        df_matches = pd.DataFrame(matches, columns=['Match_distance', 'id'])
-        df_matches['labels'] = labels
+        dtw_method = self.ede_cfg['operators']['cycle_detect'].get('dtw', None)
+        if dtw_method is None:
+            # Add clustered data
+            df_matches = pd.DataFrame(matches, columns=['Match_distance', 'id'])
+            df_matches['labels'] = labels
 
-        self.cdata['labels'] = 0
+            self.cdata['labels'] = 0
 
-        for match_distance, id in matches:
-            self.cdata.iloc[id, self.cdata.columns.get_loc('labels')] = df_matches.loc[
-                df_matches['id'] == id, 'labels']
+            for match_distance, id in matches:
+                self.cdata.iloc[id, self.cdata.columns.get_loc('labels')] = df_matches.loc[
+                    df_matches['id'] == id, 'labels']
+        else:
+            series_labels = dict(zip(matches[matches['dtw_detect'] == 1].index, labels))
+            for k, v in series_labels.items():
+                matches.loc[k, 'labels'] = v
 
         if save:
             # Save clusterer to minio bucket scamp-models
