@@ -22,4 +22,6 @@ jsonschema
 dtaidistance
 kafka-python
 hdbscan
-bjoern
+dash
+dash-bootstrap-components
+celery
