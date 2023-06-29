@@ -721,13 +721,13 @@ class EDEScampEngine():
                            # 'cluster': self.cdata[id:id + size_of_pattern].iloc[0].labels
                            }
                 try:
-                    pattern['cluster'] = self.cdata[index:index + size_of_pattern].iloc[0].labels
+                    pattern['cluster'] = matches[index:index + size_of_pattern].iloc[0].labels
                 except Exception as e:
                     # print(f"No clusterer predictions")
                     pattern['cluster'] = None
 
                 try:
-                    pattern['anomaly'] = self.cdata[index:index + size_of_pattern].iloc[0].anomaly
+                    pattern['anomaly'] = matches[index:index + size_of_pattern].iloc[0].anomaly
                 except Exception as e:
                     # print(f"No anomaly predictions")
                     pattern['anomaly'] = None
@@ -751,18 +751,26 @@ class EDEScampEngine():
 
             ano_label = an_model.predict(np.array(tseries))
             print(f"Detected anomalies: {np.unique(ano_label, return_counts=True)}")
-            df_matches = pd.DataFrame(matches, columns=['Match_distance', 'id'])
-            df_matches["anomaly"] = ano_label
-            self.cdata["anomaly"] = 0
-            for match_distance, id in matches:
-                self.cdata.iloc[id, self.cdata.columns.get_loc("anomaly")] = df_matches.loc[
-                    df_matches['id'] == id, "anomaly"]
+            dtw_method = self.ede_cfg['operators']['cycle_detect'].get('dtw', None)
+            if dtw_method is None:
+                df_matches = pd.DataFrame(matches, columns=['Match_distance', 'id'])
+                df_matches["anomaly"] = ano_label
+                self.cdata["anomaly"] = 0
+                for match_distance, id in matches:
+                    self.cdata.iloc[id, self.cdata.columns.get_loc("anomaly")] = df_matches.loc[
+                        df_matches['id'] == id, "anomaly"]
+            else:
+                series_labels = dict(zip(matches[matches['dtw_detect'] == 1].index, ano_label))
+                for k, v in series_labels.items():
+                    matches.loc[k, 'anomaly'] = v
+
             if save:
                 # Save clusterer to minio bucket scamp-models
                 self.__save_model(an_model, self.ede_cfg['operators']['anomaly']['model'])
         return tseries, matches, size_of_pattern
 
-    def cycle_anomaly_inference(self, tseries=[],
+    def cycle_anomaly_inference(self,
+                                tseries=[],
                                 matches=[],
                                 size_of_pattern=0):
 
