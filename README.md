@@ -375,3 +375,57 @@ We use several environment variables to configure the service. The following var
 
 All environment variables have default values in acrodance with the libraries used.
 
+## Suported detection methods
+
+In order to ensure that the service is as flexible as possible we support several detection methods. In order to
+acomplish this we use the [sklearn](https://scikit-learn.org/stable/) API conventions as a guideline, thus all methods which 
+use this convention are compatible with our service. Of particular note is the [PyOD](https://pyod.readthedocs.io/en/latest/) library which we support
+in its entirety. The following methods are currently supported:
+
+| Type              | Acronim           | Method                                                                                                  |
+|-------------------|-------------------|---------------------------------------------------------------------------------------------------------|
+| Probabilistic     | ECOD              | Unsupervised Outlier Detection Using   Empirical Cumulative Distribution Functions                      |
+| Probabilistic     | ABOD              | Angle-Based Outlier Detection                                                                           |
+| Probabilistic     | FastABOD          | Fast Angle-Based Outlier Detection using   approximation                                                |
+| Probabilistic     | COPOD             | COPOD: Copula-Based Outlier Detection                                                                   |
+| Probabilistic     | MAD               | Median Absolute Deviation (MAD)                                                                         |
+| Probabilistic     | SOS               | Stochastic Outlier Selection                                                                            |
+| Probabilistic     | QMCD              | Quasi-Monte Carlo Discrepancy outlier   detection                                                       |
+| Probabilistic     | KDE               | Outlier Detection with Kernel Density   Functions                                                       |
+| Probabilistic     | Sampling          | Rapid distance-based outlier detection   via sampling                                                   |
+| Probabilistic     | GMM               | Probabilistic Mixture Modeling for   Outlier Analysis                                                   |
+| Linear Model      | PCA               | Principal Component Analysis (the sum of   weighted projected distances to the eigenvector hyperplanes) |
+| Linear Model      | KPCA              | Kernel Principal Component Analysis                                                                     |
+| Linear Model      | MCD               | Minimum Covariance Determinant (use the   mahalanobis distances as the outlier scores)                  |
+| Linear Model      | CD                | Use Cook's distance for outlier detection                                                               |
+| Linear Model      | OCSVM             | One-Class Support Vector Machines                                                                       |
+| Linear Model      | LMDD              | Deviation-based Outlier Detection (LMDD)                                                                |
+| Proximity-Based   | LOF               | Local Outlier Factor                                                                                    |
+| Proximity-Based   | COF               | Connectivity-Based Outlier Factor                                                                       |
+| Proximity-Based   | (Incremental) COF | Memory Efficient Connectivity-Based   Outlier Factor (slower but reduce storage complexity)             |
+| Proximity-Based   | CBLOF             | Clustering-Based Local Outlier Factor                                                                   |
+| Proximity-Based   | LOCI              | LOCI: Fast outlier detection using the   local correlation integral                                     |
+| Proximity-Based   | HBOS              | Histogram-based Outlier Score                                                                           |
+| Proximity-Based   | kNN               | k Nearest Neighbors (use the distance to   the kth nearest neighbor as the outlier score)               |
+| Proximity-Based   | AvgKNN            | Average kNN (use the average distance to   k nearest neighbors as the outlier score)                    |
+| Proximity-Based   | MedKNN            | Median kNN (use the median distance to k   nearest neighbors as the outlier score)                      |
+| Proximity-Based   | SOD               | Subspace Outlier Detection                                                                              |
+| Proximity-Based   | ROD               | Rotation-based Outlier Detection                                                                        |
+| Outlier Ensembles | IForest           | Isolation Forest                                                                                        |
+| Outlier Ensembles | INNE              | Isolation-based Anomaly Detection Using   Nearest-Neighbor Ensembles                                    |
+| Outlier Ensembles | FB                | Feature Bagging                                                                                         |
+| Outlier Ensembles | LSCP              | LSCP: Locally Selective Combination of   Parallel Outlier Ensembles                                     |
+| Outlier Ensembles | XGBOD             | Extreme Boosting Based Outlier Detection   (Supervised)                                                 |
+| Outlier Ensembles | LODA              | Lightweight On-line Detector of Anomalies                                                               |
+| Outlier Ensembles | SUOD              | SUOD: Accelerating Large-scale   Unsupervised Heterogeneous Outlier Detection (Acceleration)            |
+| Neural Networks   | AutoEncoder       | Fully connected AutoEncoder (use   reconstruction error as the outlier score)                           |
+| Neural Networks   | VAE               | Variational AutoEncoder (use   reconstruction error as the outlier score)                               |
+| Neural Networks   | Beta-VAE          | Variational AutoEncoder (all customized   loss term by varying gamma and capacity)                      |
+| Neural Networks   | SO_GAAL           | Single-Objective Generative Adversarial   Active Learning                                               |
+| Neural Networks   | MO_GAAL           | Multiple-Objective Generative Adversarial   Active Learning                                             |
+| Neural Networks   | DeepSVDD          | Deep One-Class Classification                                                                           |
+| Neural Networks   | AnoGAN            | Anomaly Detection with Generative   Adversarial Networks                                                |
+| Neural Networks   | ALAD              | Adversarially learned anomaly detection                                                                 |
+| Graph-based       | R-Graph           | Outlier detection by R-graph                                                                            |
+| Graph-based       | LUNAR             | LUNAR: Unifying Local Outlier Detection   Methods via Graph Neural Networks                             |
+
