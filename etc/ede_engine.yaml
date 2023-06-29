@@ -1,7 +1,7 @@
 ---
 source:
   ts_source:
-    query: 'from(bucket: "sensors")|> range(start: -1h)|> filter(fn: (r) => r["_measurement"] == "B827EB019C33")|> filter(fn: (r) => r["_field"] == "value")|> filter(fn: (r) => r["device_id"] == "B827EB019C33")|> filter(fn: (r) => r["sid"] == "1")|> yield(name: "mean")'
+    query: 'from(bucket: "sensors")|> range(start: -15m)|> filter(fn: (r) => r["_measurement"] == "B827EB019C33")|> filter(fn: (r) => r["_field"] == "value")|> filter(fn: (r) => r["device_id"] == "B827EB019C33")|> filter(fn: (r) => r["sid"] == "1")|> yield(name: "mean")'
 out:
 #   grafana: {}
 #   kafka:

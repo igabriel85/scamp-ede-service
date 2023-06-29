@@ -132,7 +132,7 @@ class EDEScampEngine():
         try:
             client = InfluxDBClient(url=self.source_cfg['source']['ts_source']['host'],
                                     token=self.source_cfg['source']['ts_source']['token'],
-                                    org=self.source_cfg['source']['ts_source'].get('org', 'scamp'))
+                                    org=self.source_cfg['source']['ts_source'].get('org', 'scampml'))
             query = self.ede_cfg['source']['ts_source']['query']
             feature = self.ede_cfg['source']['ts_source'].get("feature", "_value")
             self.__job_stat('Loading influxdb data')
@@ -288,7 +288,8 @@ class EDEScampEngine():
         try:
             client = InfluxDBClient(url=self.source_cfg['source']['ts_source']['host'],
                                     token=self.source_cfg['source']['ts_source']['token'],
-                                    org=self.source_cfg['source']['ts_source'].get('org', 'scampml'))
+                                    org=self.source_cfg['source']['ts_source'].get('org', 'scampml'),
+                                    timeout=60_000,)
             query = self.ede_cfg['operators']['cycle_detect']['pattern']
             feature = self.ede_cfg['source']['ts_source'].get("feature", "_value")
             self.__job_stat('Fetching pattern from influxdb')
