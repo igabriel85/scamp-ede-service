@@ -12,7 +12,9 @@ RUN mkdir /app/models
 RUN apt-get update
 
 COPY requirements.txt /app/requirements.txt
+RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
+RUN pip install git+https://github.com/wannesm/dtaidistance.git#egg=dtaidistance
 
 COPY . /app
 
