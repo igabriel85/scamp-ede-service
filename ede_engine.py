@@ -156,13 +156,17 @@ class EDEScampEngine():
             producer = KafkaProducer(value_serializer=lambda v: json.dumps(v).encode('utf-8'),
                                           bootstrap_servers=["{}".format(self.ede_cfg['out']['kafka']['broker'])],
                                           retries=5)
+            query = self.ede_cfg['source']['ts_source']['query'] # make independent of influxdb query
+            device_id = query.split("r[\"_measurement\"] ==")[1].split(")")[0].strip().replace("\"", "")
+            for cycle in body['cycles']:
+                cycle['device_id'] = device_id
             producer.send(self.ede_cfg['out']['kafka']['topic'], body)
-            self.__job_stat('Output to kafka')
+            self.__job_stat('Outputting to kafka')
             # self.job.meta['status'] = 'Output to kafka'
         except Exception as inst:
             self.__job_stat(f'Error outputting to kafka with {type(inst)} and {inst.args}')
             # self.job.meta['status'] = 'Error output to kafka'
-            print('Error outputing to kafka with {} and {}'.format(type(inst), inst.args))
+            print('Error outputting to kafka with {} and {}'.format(type(inst), inst.args))
 
     def __influxdb_out(self, body):
         print("Outputting to influxdb")
