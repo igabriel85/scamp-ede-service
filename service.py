@@ -205,7 +205,7 @@ class DetectionSchema(marshmallow.Schema):
 @marshal_with(StatusSchemaList(), code=200)
 class ScampStatus(Resource, MethodResource):
     def get(self):
-        import sklearn, stumpy, shap
+        import sklearn, stumpy
         resp = jsonify({
             'libraries': [
                 {
@@ -215,10 +215,6 @@ class ScampStatus(Resource, MethodResource):
                 {
                     "version": str(stumpy.__version__),
                     "module": "stumpy",
-                },
-                {
-                    "version": str(shap.__version__),
-                    "module": "shap",
                 }
             ]
         })
