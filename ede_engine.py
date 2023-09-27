@@ -392,6 +392,9 @@ class EDEScampEngine():
         for t in tseries:
             score.append(dtw.distance_fast(np.asarray(t), np.asarray(pattern), window=window, use_pruning=True))
         score_median = median(score)
+        if np.isnan(score_median):
+            clean_score = [x for x in score if not np.isnan(x)]
+            score_median = median(clean_score)
         if max_distance > 90:
             self.__job_stat(f'Max distance is to low for dtw cycle detection, mean score is {score_median}')
             import sys
