@@ -4,9 +4,9 @@ source:
     query: 'from(bucket: "sensors")|> range(start: -15m)|> filter(fn: (r) => r["_measurement"] == "B827EB019C33")|> filter(fn: (r) => r["_field"] == "value")|> filter(fn: (r) => r["device_id"] == "B827EB019C33")|> filter(fn: (r) => r["sid"] == "1")|> yield(name: "mean")'
 out:
 #   grafana: {}
-#   kafka:
-#     topic: ede_events
-#     broker: kafka:9092
+  kafka:
+     topic: ede
+     broker: 85.120.206.118:9092
   influxdb: ede
 operators:
   scaler:
