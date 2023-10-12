@@ -27,11 +27,7 @@ can be found bellow:
     {
       "module": "stumpy",
       "version": "1.11.1"
-    },
-    {
-      "module": "shap",
-      "version": "0.41.0"
-    }
+    
   ]
 }
 ```
