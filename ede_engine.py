@@ -160,6 +160,8 @@ class EDEScampEngine():
             device_id = query.split("r[\"_measurement\"] ==")[1].split(")")[0].strip().replace("\"", "")
             for cycle in body['cycles']:
                 cycle['device_id'] = device_id
+                cycle['start'] = cycle['start'].strftime('%Y-%m-%d %H:%M:%S.%f')
+                cycle['end'] = cycle['end'].strftime('%Y-%m-%d %H:%M:%S.%f')
             producer.send(self.ede_cfg['out']['kafka']['topic'], body)
             self.__job_stat('Outputting to kafka')
             # self.job.meta['status'] = 'Output to kafka'
