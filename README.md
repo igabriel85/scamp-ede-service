@@ -368,6 +368,7 @@ We use several environment variables to configure the service. The following var
 * `EDE_USER` - the user to use for the EDE-Service
 * `REDIS_END` - the endpoint for redis queue
 * `REDIS_PORT` - the port for redis queue
+* `WORKER_THRESHOLD` - threshold modifier for number of supported workers, be default it is twice the number of CPU cores
 
 All environment variables have default values in acrodance with the libraries used.
 

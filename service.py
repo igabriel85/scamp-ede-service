@@ -15,6 +15,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
+import os
+
 from flask import request, jsonify, send_file
 from werkzeug.utils import secure_filename
 from minio import Minio
@@ -475,9 +477,11 @@ class EngineWorkers(Resource, MethodResource):
     def post(self):
         list_workers = get_list_workers()
         logic_cpu = psutil.cpu_count(logical=True)
-        if len(list_workers) > logic_cpu - 1:
+        worker_threshold = os.getenv('WORKER_THRESHOLD', 2)
+        if len(list_workers) > (logic_cpu - 1)*worker_threshold:
             resp = jsonify({'warning': 'maximum number of workers active!',
-                                'workers': logic_cpu})
+                                'workers': logic_cpu,
+                            'threshold': worker_threshold})
             log.warning('Maximum number of aug workers reached: {}'.format(logic_cpu))
             resp.status_code = 200
             return resp
