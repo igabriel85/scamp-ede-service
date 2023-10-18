@@ -59,7 +59,6 @@ redis_port = os.getenv('REDIS_PORT', 6379)
 r_connection = Redis(host=redis_end, port=redis_port)
 queue = rq.Queue('ede', connection=r_connection)  # TODO create 3 priority queues and make them selectable from REST call
 
-
 ################# Schemas ################
 # For Response
 
@@ -489,6 +488,15 @@ class EngineWorkers(Resource, MethodResource):
         sb_pid = p.pid
         log.info("Starting ede worker {}".format(len(list_workers)))
         if check_pid(sb_pid):
+            try:
+                queue.get_job_ids()
+            except Exception as inst:
+                log.error(f'Error connecting to redis with {type(inst)} and {inst.args}')
+                resp = jsonify({
+                    'error': f'Error connecting to redis with {type(inst)} and {inst.args}'
+                })
+                resp.status_code = 500
+                return resp
             resp = jsonify({'status': 'worker started',
                             'pid': sb_pid})
             resp.status_code = 201
