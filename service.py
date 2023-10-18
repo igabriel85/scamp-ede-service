@@ -485,11 +485,18 @@ class EngineWorkers(Resource, MethodResource):
             log.warning('Maximum number of aug workers reached: {}'.format(logic_cpu))
             resp.status_code = 200
             return resp
-        subprocess.Popen(['python', 'ede_worker.py'])
-        log.info("Starting aug worker {}".format(len(list_workers)))
-        resp = jsonify({'status': 'workers started'})
-        resp.status_code = 201
-        return resp
+        p = subprocess.Popen(['python', 'ede_worker.py'])
+        sb_pid = p.pid
+        log.info("Starting ede worker {}".format(len(list_workers)))
+        if check_pid(sb_pid):
+            resp = jsonify({'status': 'worker started',
+                            'pid': sb_pid})
+            resp.status_code = 201
+            return resp
+        else:
+            resp = jsonify({'error': 'worker failed to start'})
+            resp.status_code = 500
+            return resp
 
     def delete(self):
         list_workers = get_list_workers()
