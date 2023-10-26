@@ -14,6 +14,9 @@ import hdbscan
 from joblib import dump, load
 from statistics import mean, median
 from utils import percentage
+import datetime
+import time
+import glob
 
 # from logging import getLogger
 # log = getLogger(__name__)
@@ -149,6 +152,25 @@ class EDEScampEngine():
             print(f'Error loading data from influxdb with {type(inst)} and {inst.args}')
             return pd.DataFrame()
 
+    def __local_out(self, body):
+        # fixed the date format
+        processed_cycles = []
+        for cycle in body['cycles']:
+            cycle['start'] = cycle['start'].strftime("%Y-%m-%d %H:%M:%S")
+            cycle['end'] = cycle['end'].strftime("%Y-%m-%d %H:%M:%S")
+            processed_cycles.append(cycle)
+        processed_body = {}
+        processed_body['cycles'] = processed_cycles
+        # check for number of files
+        file_list = glob.glob(os.path.join(self.data_dir, 'cycles_*'))
+        if len(file_list) > self.ads_cfg['out']['local']:
+            # remove the oldest file
+            oldest_file = min(file_list, key=os.path.getctime)
+            os.remove(oldest_file)
+        timestamp = datetime.datetime.fromtimestamp(time.time())
+        with open(os.path.join(self.data_dir, f"cycles_{timestamp.strftime('%Y-%m-%d_%H:%M:%S')}_{self.job.id}.json"),
+                  "w") as fp:
+            json.dump(body, fp)
 
     def __kafka_out(self, body):
         # Output the results to kafka
@@ -272,6 +294,8 @@ class EDEScampEngine():
             self.__kafka_out(data)
         if 'influxdb' in self.ede_cfg['out'].keys():
             self.__influxdb_out(data)
+        if 'local' in self.ede_cfg['out'].keys():
+            self.__local_out(data)
 
     def __scale_data(self, df):
         # scale the data
@@ -284,7 +308,7 @@ class EDEScampEngine():
                 self.__job_stat(f'Scaling data using {k}')
                 # self.job.meta['status'] = f'Scaling data using {k}'
                 resp_scaled = scaler.fit_transform(np.asarray(df).reshape(-1, 1))
-            df_resp_scaled = pd.DataFrame(resp_scaled, index=df.index)
+            df_resp_scaled = pd.DataFrame(resp_scaled, index=df.index, columns=df.columns)
         else:
             return df
         return df_resp_scaled
@@ -691,7 +715,11 @@ class EDEScampEngine():
         if self.ede_cfg['operators'].get('cluster', {}):
             tseries, matches, size_of_pattern = self.cycle_cluster_trainer()
         else:
-            tseries, matches, size_of_pattern = self.cycle_detection(feature=self.ede_cfg['source']['ts_source'].get("feature", "_value"))
+            if 'ts_source' in self.ede_cfg['source'].keys():
+                tseries, matches, size_of_pattern = self.cycle_detection(feature=self.ede_cfg['source']['ts_source'].get("feature", "_value"))
+            else:
+                self.__job_stat(f'TS source not set with, using default feature _value')
+                tseries, matches, size_of_pattern = self.cycle_detection(feature='_value')
             if not tseries: # if no pattern was found
                 return {'cycles': []}
         if self.ede_cfg['operators'].get('anomaly', {}):

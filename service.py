@@ -316,6 +316,35 @@ class ScampDataSourceDetails(Resource, MethodResource):
         return resp
 
 
+@doc(description='Check local data', tags=['source'])
+class DataHandlerLocalCycles(Resource, MethodResource):
+    def get(self):
+        return jsonify({"cycles": get_list_data_files(data_dir, "json")})
+
+
+@doc(description='Check local data based on UUID', tags=['source'])
+class DataHandlerLocalCyclesUUID(Resource, MethodResource):
+    def get(self, uuid):
+        return jsonify({"cycles": get_list_data_files(data_dir, "json", uuid=uuid)})
+
+
+@doc(description='Fetch last cycle detected based on uuid', tags=['source'])
+class DataHandlerLocalCyclesUUIDLast(Resource, MethodResource):
+    def get(self, uuid):
+        g_dir = "{}/*_{}.{}".format(data_dir, uuid, 'json')
+        list_of_files = glob.glob(g_dir)
+        try:
+            latest_file = max(list_of_files, key=os.path.getctime)
+        except ValueError:
+            log.error(f"UUID {uuid} not found!")
+            resp = jsonify({
+                "error": f"cycle with UUID {uuid} not found!"
+            })
+            resp.status_code = 404
+            return resp
+        return send_file(latest_file, mimetype="application/octet-stream")
+
+
 @doc(description='Fetch and Add local data', tags=['source'])
 class DataHandlerLocal(Resource, MethodResource):
     def get(self, data):
@@ -941,6 +970,10 @@ api.add_resource(EngineWorkers, "/v1/ede/workers")
 
 api.add_resource(DataHandlerViz, "/v1/source/<string:source>")
 api.add_resource(DataHandlerRemote, "/v1/source/remote/<string:data>")
+api.add_resource(DataHandlerLocalCycles, "/v1/source/local/cycles")
+api.add_resource(DataHandlerLocalCyclesUUIDLast, "/v1/source/local/cycles/<string:uuid>/latest")
+api.add_resource(DataHandlerLocalCyclesUUID, "/v1/source/local/cycles/<string:uuid>")
+
 
 
 
@@ -960,7 +993,10 @@ docs.register(EngineWorkers)
 
 docs.register(DataHandlerViz)
 docs.register(DataHandlerLocal)
+docs.register(DataHandlerLocalCyclesUUID)
+docs.register(DataHandlerLocalCyclesUUIDLast)
 docs.register(DataHandlerRemote)
+docs.register(DataHandlerLocalCycles)
 # docs.register(DataHandlerConfig)
 
 
