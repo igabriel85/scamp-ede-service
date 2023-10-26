@@ -1,3 +1,4 @@
+werkzeug==2.2.2
 Flask==2.0.3
 flask-apispec==0.11.0
 Flask-Compress==1.11
