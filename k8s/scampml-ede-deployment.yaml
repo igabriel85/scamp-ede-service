@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: scampml-ede
   labels:
@@ -14,7 +14,6 @@ spec:
       group: detection
       type: deployment
       name: ede
-  serviceName: "scampml-ede"
   replicas: 1
   minReadySeconds: 10
   template:
@@ -30,7 +29,7 @@ spec:
       - name: gitlab-scampml-ede-puller
       containers:
       - name: scampml-ede
-        image: registry.dev.scamp.roiot.ro/scamp-ml/ede-service:0.0.6
+        image: registry.dev.scamp.roiot.ro/scamp-ml/ede-service:0.0.8
         imagePullPolicy: Always
         env:
           - name: REDIS_END
