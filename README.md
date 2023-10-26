@@ -27,7 +27,7 @@ can be found bellow:
     {
       "module": "stumpy",
       "version": "1.11.1"
-    
+    }
   ]
 }
 ```
@@ -345,6 +345,20 @@ This resource is used to return the local data source file as defined by the __d
 `GET /v1/source/local/<data>`
 
 This resource is used to upload a data file to the local data source.
+
+`GET /v1/source/local/cycles`
+
+This resource fetches only the locally stored cycles. During output configuration the maximum number of cycle detection instances is defined.
+
+`GET /v1/source/local/cycles/<uuid>`
+
+This resource lists all cycles detected locally with a particular UUID. If the loop parameter for detection is set to false then only one cycle per job UUID will be stored. 
+If the loop parameter is set to true then all cycles will be stored using the same UUID.
+
+`GET /v1/source/local/cycles/<uuid>/latest`
+
+This resource returns the latest cycle detected for a particular job UUID. For other cycles please use the generic file fetching mechanism; ```/v1/source/local/<data>```
+
 
 ### Data
 
