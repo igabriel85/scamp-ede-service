@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scampml-ede
+  labels:
+    app: scampml-services
+    group: detection
+    type: deployment
+    name: ede
+spec:
+  selector:
+    matchLabels:
+      app: scampml-services
+      group: detection
+      type: deployment
+      name: ede
+  replicas: 1
+  minReadySeconds: 10
+  template:
+    metadata:
+      labels:
+        app: scampml-services
+        group: detection
+        type: deployment
+        name: ede
+    spec:
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+      - name: gitlab-scampml-ede-puller
+      containers:
+      - name: scampml-ede
+        image: registry.dev.scamp.roiot.ro/scamp-ml/ede-service:0.0.8
+        imagePullPolicy: Always
+        env:
+          - name: REDIS_END
+            value: "redis-master.messaging.svc.cluster.local"
+        ports:
+        - containerPort: 5001
+          protocol: TCP
+          name: dgw-http1
+        - containerPort: 8050
+          protocol: TCP
+          name: dgw-http2
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /v1/ede
+            port: dgw-http1
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: "4"
+            memory: 12Gi
+          requests:
+            cpu: "2"
+            memory: 8Gi

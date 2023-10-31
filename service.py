@@ -15,6 +15,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
+import os
+
 from flask import request, jsonify, send_file
 from werkzeug.utils import secure_filename
 from minio import Minio
@@ -31,6 +33,8 @@ import psutil
 from redis import Redis
 import rq
 from rq.job import Job
+from rq import cancel_job
+from rq.command import send_stop_job_command
 from app import *
 from utils import *
 import json
@@ -54,7 +58,6 @@ redis_end = os.getenv('REDIS_END', 'redis')
 redis_port = os.getenv('REDIS_PORT', 6379)
 r_connection = Redis(host=redis_end, port=redis_port)
 queue = rq.Queue('ede', connection=r_connection)  # TODO create 3 priority queues and make them selectable from REST call
-
 
 ################# Schemas ################
 # For Response
@@ -136,6 +139,7 @@ class EngineCycleDetect(marshmallow.Schema):
     max_distance = marshmallow.fields.Float()
     checkpoint = marshmallow.fields.Int()
     delta_bias = marshmallow.fields.Float()
+    dtw = marshmallow.fields.Bool()
 
 
 class HDBSCANSchema(marshmallow.Schema):
@@ -193,11 +197,16 @@ class DataHandlerRemoteSchema(marshmallow.Schema):
     message = marshmallow.fields.Str()
 
 
+class DetectionSchema(marshmallow.Schema):
+    loop = marshmallow.fields.Int()
+    period = marshmallow.fields.Int()
+
+
 @doc(description='Library backend versions', tags=['status'])
 @marshal_with(StatusSchemaList(), code=200)
 class ScampStatus(Resource, MethodResource):
     def get(self):
-        import sklearn, stumpy, shap
+        import sklearn, stumpy
         resp = jsonify({
             'libraries': [
                 {
@@ -207,10 +216,6 @@ class ScampStatus(Resource, MethodResource):
                 {
                     "version": str(stumpy.__version__),
                     "module": "stumpy",
-                },
-                {
-                    "version": str(shap.__version__),
-                    "module": "shap",
                 }
             ]
         })
@@ -309,6 +314,35 @@ class ScampDataSourceDetails(Resource, MethodResource):
             resp = jsonify({"local": get_list_data_files(data_dir)})
             resp.status_code = 200
         return resp
+
+
+@doc(description='Check local data', tags=['source'])
+class DataHandlerLocalCycles(Resource, MethodResource):
+    def get(self):
+        return jsonify({"cycles": get_list_data_files(data_dir, "json")})
+
+
+@doc(description='Check local data based on UUID', tags=['source'])
+class DataHandlerLocalCyclesUUID(Resource, MethodResource):
+    def get(self, uuid):
+        return jsonify({"cycles": get_list_data_files(data_dir, "json", uuid=uuid)})
+
+
+@doc(description='Fetch last cycle detected based on uuid', tags=['source'])
+class DataHandlerLocalCyclesUUIDLast(Resource, MethodResource):
+    def get(self, uuid):
+        g_dir = "{}/*_{}.{}".format(data_dir, uuid, 'json')
+        list_of_files = glob.glob(g_dir)
+        try:
+            latest_file = max(list_of_files, key=os.path.getctime)
+        except ValueError:
+            log.error(f"UUID {uuid} not found!")
+            resp = jsonify({
+                "error": f"cycle with UUID {uuid} not found!"
+            })
+            resp.status_code = 404
+            return resp
+        return send_file(latest_file, mimetype="application/octet-stream")
 
 
 @doc(description='Fetch and Add local data', tags=['source'])
@@ -471,17 +505,35 @@ class EngineWorkers(Resource, MethodResource):
     def post(self):
         list_workers = get_list_workers()
         logic_cpu = psutil.cpu_count(logical=True)
-        if len(list_workers) > logic_cpu - 1:
+        worker_threshold = os.getenv('WORKER_THRESHOLD', 2)
+        if len(list_workers) > (logic_cpu - 1)*worker_threshold:
             resp = jsonify({'warning': 'maximum number of workers active!',
-                                'workers': logic_cpu})
+                                'workers': logic_cpu,
+                            'threshold': worker_threshold})
             log.warning('Maximum number of aug workers reached: {}'.format(logic_cpu))
             resp.status_code = 200
             return resp
-        subprocess.Popen(['python', 'ede_worker.py'])
-        log.info("Starting aug worker {}".format(len(list_workers)))
-        resp = jsonify({'status': 'workers started'})
-        resp.status_code = 201
-        return resp
+        p = subprocess.Popen(['python', 'ede_worker.py'])
+        sb_pid = p.pid
+        log.info("Starting ede worker {}".format(len(list_workers)))
+        if check_pid(sb_pid):
+            try:
+                queue.get_job_ids()
+            except Exception as inst:
+                log.error(f'Error connecting to redis with {type(inst)} and {inst.args}')
+                resp = jsonify({
+                    'error': f'Error connecting to redis with {type(inst)} and {inst.args}'
+                })
+                resp.status_code = 500
+                return resp
+            resp = jsonify({'status': 'worker started',
+                            'pid': sb_pid})
+            resp.status_code = 201
+            return resp
+        else:
+            resp = jsonify({'error': 'worker failed to start'})
+            resp.status_code = 500
+            return resp
 
     def delete(self):
         list_workers = get_list_workers()
@@ -584,6 +636,7 @@ class EdeEngineRevertConfig(Resource, MethodResource):
 
 
 @doc(description='Detection Handling', tags=['engine'])
+@use_kwargs(DetectionSchema(), apply=False)
 class EdeEngineDetect(Resource, MethodResource):
     def post(self):
         with open(os.path.join(etc_dir, 'ede_engine.yaml')) as f:
@@ -596,15 +649,15 @@ class EdeEngineDetect(Resource, MethodResource):
             loop = request.json['loop']
             period = request.json['period']
         else:
-            loop = False
-            period = 0
+            loop = False # for testing is set to false
+            period = 0 # for testinf it is set to 20
         mconf = {
             'ede_cfg': config_dict,
             'source_cfg': source_dict,
             'loop': loop,
             'period': period
         }
-        job = queue.enqueue(ede_detect_handler, mconf)
+        job = queue.enqueue(ede_detect_handler, mconf, job_timeout=-1)
         resp = jsonify({
             'job_id': job.get_id(),
             'config': mconf
@@ -678,6 +731,45 @@ class EdeEngineJobQueueStatus(Resource, MethodResource):
         resp.status_code = 200
         return resp
 
+    def delete(self):
+        try:
+            jobs = queue.get_job_ids()
+        except Exception as inst:
+            log.error(f'Error connecting to redis with {type(inst)} and {inst.args}')
+            resp = jsonify({
+                'error': f'Error connecting to redis with {type(inst)} and {inst.args}'
+            })
+            resp.status_code = 500
+            return resp
+        for rjob in jobs:
+            try:
+                job = Job.fetch(rjob, connection=r_connection)
+            except:
+                log.error("No job with id {}".format(rjob))
+                response = {'error': 'no such job'}
+                return response
+            job.delete()
+
+        failed_registry = queue.failed_job_registry
+        started_registry = queue.started_job_registry
+
+        for rjob in failed_registry.get_job_ids():
+            failed_registry.remove(rjob, delete_job=True)
+
+        for rjob in started_registry.get_job_ids():
+            send_stop_job_command(r_connection, rjob)
+            cancel_job(rjob, connection=r_connection)
+            # job = Job.fetch(rjob, connection=r_connection)
+            # job.cancel()
+            started_registry.remove(rjob, delete_job=True)
+        resp = jsonify(
+            {
+                'message': 'All jobs deleted'
+            }
+        )
+        resp.status_code = 200
+        return resp
+
 
 @doc(description='EDE Engine Job details', tags=['engine'])
 class EdeEngineJobStatus(Resource, MethodResource):
@@ -697,6 +789,22 @@ class EdeEngineJobStatus(Resource, MethodResource):
         response = jsonify({'status': status,
                             'finished': finished,
                             'meta': meta})
+        response.status_code = 200
+        return response
+
+    def delete(self, job_id):
+        try:
+            job = Job.fetch(job_id, connection=r_connection)
+        except Exception as inst:
+            log.error("No job with id {}".format(job_id))
+            response = jsonify({'error': 'no job',
+                                'job_id': job_id})
+            response.status_code = 404
+            return response
+        send_stop_job_command(r_connection, job_id)
+        job.delete()
+        response = jsonify({'status': 'deleted',
+                            'job_id': job_id})
         response.status_code = 200
         return response
 
@@ -862,6 +970,10 @@ api.add_resource(EngineWorkers, "/v1/ede/workers")
 
 api.add_resource(DataHandlerViz, "/v1/source/<string:source>")
 api.add_resource(DataHandlerRemote, "/v1/source/remote/<string:data>")
+api.add_resource(DataHandlerLocalCycles, "/v1/source/local/cycles")
+api.add_resource(DataHandlerLocalCyclesUUIDLast, "/v1/source/local/cycles/<string:uuid>/latest")
+api.add_resource(DataHandlerLocalCyclesUUID, "/v1/source/local/cycles/<string:uuid>")
+
 
 
 
@@ -881,7 +993,10 @@ docs.register(EngineWorkers)
 
 docs.register(DataHandlerViz)
 docs.register(DataHandlerLocal)
+docs.register(DataHandlerLocalCyclesUUID)
+docs.register(DataHandlerLocalCyclesUUIDLast)
 docs.register(DataHandlerRemote)
+docs.register(DataHandlerLocalCycles)
 # docs.register(DataHandlerConfig)
 
 

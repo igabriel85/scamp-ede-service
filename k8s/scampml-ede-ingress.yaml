@@ -1,0 +1,59 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: scampml-ede-5001
+  labels:
+    app: scampml-services
+    group: detection
+    type: deployment
+    name: ede
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - ede-5001.ieat.services.scamp.roiot.ro
+      secretName: ede-5001-ieat-services-scamp-roiot-ro
+  rules:
+    - host: ede-5001.ieat.services.scamp.roiot.ro
+      http:
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: scampml-ede-5001
+                port:
+                  number: 5001
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: scampml-ede-8050
+  labels:
+    app: scampml-services
+    group: detection
+    type: deployment
+    name: ede
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - ede-8050.ieat.services.scamp.roiot.ro
+      secretName: ede-8050-ieat-services-scamp-roiot-ro
+  rules:
+    - host: ede-8050.ieat.services.scamp.roiot.ro
+      http:
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: scampml-ede-8050
+                port:
+                  number: 8050

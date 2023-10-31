@@ -12,14 +12,22 @@ from kafka import KafkaProducer
 from dtaidistance import dtw
 import hdbscan
 from joblib import dump, load
+from statistics import mean, median
+from utils import percentage
+import datetime
+import time
+import glob
 
 # from logging import getLogger
 # log = getLogger(__name__)
 
 
 # Influx Connection
-from influxdb_client import InfluxDBClient
-
+import influxdb_client
+from influxdb_client import InfluxDBClient, WriteOptions, WritePrecision, Point
+import warnings
+from influxdb_client.client.warnings import MissingPivotFunction
+warnings.simplefilter("ignore", MissingPivotFunction)
 
 
 class EDEScampEngine():
@@ -38,7 +46,7 @@ class EDEScampEngine():
         self.data_dir = data_dir
         self.etc_dir = etc_dir
         self.models_dir = models_dir
-        # self.pattern_file = pattern_file
+        self.pattern = []
         self.mod_name = 'sklearn.preprocessing'
         self.anom_name = 'pyod.models'
         self.minio_bucket = minio_bucket
@@ -54,6 +62,10 @@ class EDEScampEngine():
             self.job.meta['progress'] = message
             self.job.save_meta()
 
+    def __job_config(self, cfg):
+        self.job.meta['config'] = cfg
+        self.job.save_meta()
+
     def load_data(self):
         '''
         Load the data from different sources as stated in ede engine config
@@ -64,7 +76,6 @@ class EDEScampEngine():
             df = self.__local_data()
         elif 'ts_source' in self.ede_cfg['source'].keys():
             df = self.__influxdb_data()
-            pass # TODO: Implement this
         elif 'minio_source' in self.ede_cfg['source'].keys():
             df = self.__minio_data()
         elif 'kafka_source'in self.ede_cfg['source'].keys():
@@ -124,19 +135,42 @@ class EDEScampEngine():
         try:
             client = InfluxDBClient(url=self.source_cfg['source']['ts_source']['host'],
                                     token=self.source_cfg['source']['ts_source']['token'],
-                                    org=self.source_cfg['source']['ts_source'].get('org', 'scamp'))
+                                    org=self.source_cfg['source']['ts_source'].get('org', 'scampml'))
             query = self.ede_cfg['source']['ts_source']['query']
             feature = self.ede_cfg['source']['ts_source'].get("feature", "_value")
             self.__job_stat('Loading influxdb data')
 
             df = client.query_api().query_data_frame(query)
+            if df.empty:
+                return df
             df['_time'] = pd.to_datetime(df['_time'])
             df.set_index('_time', inplace=True)
-            df = self.__scale_data(df[feature])
+            # df = self.__scale_data(df[feature])
             return df
         except Exception as inst:
-            print(f'Error loading data from influxdb with {type(inst)} and {inst.args}')
             self.__job_stat('Error loading data from influxdb')
+            print(f'Error loading data from influxdb with {type(inst)} and {inst.args}')
+            return pd.DataFrame()
+
+    def __local_out(self, body):
+        # fixed the date format
+        processed_cycles = []
+        for cycle in body['cycles']:
+            cycle['start'] = cycle['start'].strftime("%Y-%m-%d %H:%M:%S")
+            cycle['end'] = cycle['end'].strftime("%Y-%m-%d %H:%M:%S")
+            processed_cycles.append(cycle)
+        processed_body = {}
+        processed_body['cycles'] = processed_cycles
+        # check for number of files
+        file_list = glob.glob(os.path.join(self.data_dir, 'cycles_*'))
+        if len(file_list) > self.ads_cfg['out']['local']:
+            # remove the oldest file
+            oldest_file = min(file_list, key=os.path.getctime)
+            os.remove(oldest_file)
+        timestamp = datetime.datetime.fromtimestamp(time.time())
+        with open(os.path.join(self.data_dir, f"cycles_{timestamp.strftime('%Y-%m-%d_%H:%M:%S')}_{self.job.id}.json"),
+                  "w") as fp:
+            json.dump(body, fp)
 
     def __kafka_out(self, body):
         # Output the results to kafka
@@ -144,13 +178,113 @@ class EDEScampEngine():
             producer = KafkaProducer(value_serializer=lambda v: json.dumps(v).encode('utf-8'),
                                           bootstrap_servers=["{}".format(self.ede_cfg['out']['kafka']['broker'])],
                                           retries=5)
+            query = self.ede_cfg['source']['ts_source']['query'] # make independent of influxdb query
+            device_id = query.split("r[\"_measurement\"] ==")[1].split(")")[0].strip().replace("\"", "")
+            for cycle in body['cycles']:
+                cycle['device_id'] = device_id
+                cycle['start'] = cycle['start'].strftime('%Y-%m-%d %H:%M:%S.%f')
+                cycle['end'] = cycle['end'].strftime('%Y-%m-%d %H:%M:%S.%f')
             producer.send(self.ede_cfg['out']['kafka']['topic'], body)
-            self.__job_stat('Output to kafka')
+            self.__job_stat('Outputting to kafka')
             # self.job.meta['status'] = 'Output to kafka'
         except Exception as inst:
             self.__job_stat(f'Error outputting to kafka with {type(inst)} and {inst.args}')
             # self.job.meta['status'] = 'Error output to kafka'
-            print('Error outputing to kafka with {} and {}'.format(type(inst), inst.args))
+            print('Error outputting to kafka with {} and {}'.format(type(inst), inst.args))
+
+    def __influxdb_out(self, body):
+        print("Outputting to influxdb")
+        try:
+            client = InfluxDBClient(url=self.source_cfg['source']['ts_source']['host'],
+                                    token=self.source_cfg['source']['ts_source']['token'],
+                                    org=self.source_cfg['source']['ts_source'].get('org', 'scampml'))
+            query = self.ede_cfg['source']['ts_source']['query']
+            if not self.check_bucket_exists(client, 'ede'):
+                print("Creating bucket ede")
+                self.__job_stat('Creating Influxdb bucket')
+                self.create_influxdb_bucket(client=client, bucket_name='ede',
+                                            org=self.source_cfg['source']['ts_source'].get('org', 'scampml'))
+                print("Bucket created")
+            device_id = query.split("r[\"_measurement\"] ==")[1].split(")")[0].strip().replace("\"", "")
+            self.__job_stat('Pushing data to influxdb')
+            write_client = client.write_api(write_options=WriteOptions(batch_size=2,
+                                                                       flush_interval=10_000,
+                                                                       jitter_interval=2_000,
+                                                                       retry_interval=5_000,
+                                                                       max_retries=5,
+                                                                       max_retry_delay=30_000,
+                                                                       exponential_base=2))
+            for detect in body['cycles']:
+                print(f"-----> Cycle start {detect['start']}")
+                write_client.write(bucket="ede",
+                                   record=Point(device_id).tag("device_id", device_id).tag("cycle", "start").field(
+                                       "value", 1.0).time(detect['start'],
+                                                          WritePrecision.NS
+                                                          ))
+                print(f"-----> Cycle end {detect['end']}")
+                write_client.write(bucket="ede",
+                                   record=Point(device_id).tag("device_id", device_id).tag("cycle", "end").field(
+                                       "value", 2.0).time(detect['end'],
+                                                          WritePrecision.NS
+                                                          ))
+            client.close()
+        except Exception as inst:
+            self.__job_stat(f'Error outputting to influxdb with {type(inst)} and {inst.args}')
+            return 0
+
+        # write_client = client.write_api(write_options=WriteOptions(batch_size=1000,
+        #                                                            flush_interval=10_000,
+        #                                                            jitter_interval=2_000,
+        #                                                            retry_interval=5_000,
+        #                                                            max_retries=5,
+        #                                                            max_retry_delay=30_000,
+        #                                                            exponential_base=2))
+        # _now = datetime.utcnow()
+        # wrt_resp_start = write_client.write(bucket="ede",
+        #                                     record=Point("B827EB4165DC").tag("device_id", "B827EB4165DC").tag("cycle",
+        #                                                                                                       "start").field(
+        #                                         "value", 1.0).
+        #                                     time(_now, WritePrecision.NS))
+        # time.sleep(60)
+        # _now = datetime.utcnow()
+        # wrt_res_end = write_client.write(bucket="ede",
+        #                                  record=Point("B827EB4165DC").tag("device_id", "B827EB4165DC").tag("cycle",
+        #                                                                                                    "end").field(
+        #                                      "value", 1.0).
+        #                                  time(_now, WritePrecision.NS))
+        return 0
+
+    def get_influx_org_id(self, client, org_name):
+        influxdb_org_api = influxdb_client.OrganizationsApi(client)
+        orgs = influxdb_org_api.find_organizations()
+        for org in orgs:
+            if org.name == org_name:
+                print(f"ORG_ID: {org.id}")
+                return org.id
+        return None
+
+    def create_influxdb_bucket(self,
+                               client,
+                               bucket_name,
+                               org):
+        try:
+            new_bucket = influxdb_client.domain.bucket.Bucket(
+                name=bucket_name,
+                retention_rules=[],
+                org_id=self.get_influx_org_id(client, org)
+            )
+            client.buckets_api().create_bucket(new_bucket)
+        except Exception as inst:
+            print(f'Error creating bucket {bucket_name} with {type(inst)} and {inst.args}')
+            import sys
+            sys.exit()
+
+    def check_bucket_exists(self, client, bucket_name):
+        bucket = client.buckets_api().find_bucket_by_name(bucket_name)
+        if bucket:
+            return True
+        else:
+            return False
 
     def __output(self, data):
         # Output the results
@@ -158,6 +292,10 @@ class EDEScampEngine():
             print('todo grafana output')
         if 'kafka' in self.ede_cfg['out'].keys():
             self.__kafka_out(data)
+        if 'influxdb' in self.ede_cfg['out'].keys():
+            self.__influxdb_out(data)
+        if 'local' in self.ede_cfg['out'].keys():
+            self.__local_out(data)
 
     def __scale_data(self, df):
         # scale the data
@@ -169,21 +307,48 @@ class EDEScampEngine():
                 scaler = getattr(importlib.import_module(self.mod_name), k)(**v)
                 self.__job_stat(f'Scaling data using {k}')
                 # self.job.meta['status'] = f'Scaling data using {k}'
-                resp_scaled = scaler.fit_transform(df)
+                resp_scaled = scaler.fit_transform(np.asarray(df).reshape(-1, 1))
             df_resp_scaled = pd.DataFrame(resp_scaled, index=df.index, columns=df.columns)
         else:
             return df
         return df_resp_scaled
 
+    def __fetch_pattern_from_influxdb(self):
+        default_pattern_file = os.path.join(self.etc_dir, 'df_pattern.csv')
+        try:
+            client = InfluxDBClient(url=self.source_cfg['source']['ts_source']['host'],
+                                    token=self.source_cfg['source']['ts_source']['token'],
+                                    org=self.source_cfg['source']['ts_source'].get('org', 'scampml'),
+                                    timeout=60_000,)
+            query = self.ede_cfg['operators']['cycle_detect']['pattern']
+            feature = self.ede_cfg['source']['ts_source'].get("feature", "_value")
+            self.__job_stat('Fetching pattern from influxdb')
+            df = client.query_api().query_data_frame(query)
+            df['_time'] = pd.to_datetime(df['_time'])
+            df.set_index('_time', inplace=True)
+            df.to_csv(default_pattern_file, index=True)
+            return df
+        except Exception as inst:
+            self.__job_stat(f'Error fetching pattern from influxdb with {type(inst)} and {inst.args}')
+            raise Exception(f'Error fetching pattern from influxdb with {type(inst)} and {inst.args}')
+
     def __load_pattern(self):
         # Load the patterns
+        if not isinstance(self.pattern, list):
+            self.__job_stat('Using previously defined cycle pattern')
+            return self.pattern
         pattern = self.ede_cfg['operators']['cycle_detect'].get('pattern', None)
         if pattern:
-            self.__job_stat('Loading cycle pattern')
-            # self.job.meta['status'] = 'Loading cycle pattern'
-            df_pattern = pd.read_csv(os.path.join(self.etc_dir, pattern), index_col=0)
-            if df_pattern.shape[1] > df_pattern.shape[0]: # Check if more rows than columns, if true transpose
+            if 'csv' in pattern:
+                self.__job_stat('Loading cycle pattern')
+                # self.job.meta['status'] = 'Loading cycle pattern'
+                df_pattern = pd.read_csv(os.path.join(self.etc_dir, pattern), index_col=0)
+
+            else:
+                df_pattern = self.__fetch_pattern_from_influxdb()
+            if df_pattern.shape[1] > df_pattern.shape[0]:  # Check if more rows than columns, if true transpose
                 df_pattern = df_pattern.T
+            self.pattern = df_pattern
             return df_pattern
         else:
             self.__job_stat('No cycle pattern defined')
@@ -209,6 +374,69 @@ class EDEScampEngine():
             df_match.drop(['remove', 'diff'], axis=1, inplace=True)
             matches = df_match.to_numpy()
             return matches
+        else:
+            return matches
+
+    def __heuristic_overlap_v2(self,
+                               df,
+                               pattern
+                               ):
+        delta_bias = self.ede_cfg['operators']['cycle_detect'].get('delta_bias', None)
+        if delta_bias:
+            # df.insert(0, 'id', range(0, len(df)))
+            df.reset_index(inplace=True)
+            length_range = len(pattern)-delta_bias
+            remove_index = []
+            last = None
+            for row in df.itertuples():
+                if row.dtw_detect == 1:
+                    if last is None:
+                        last = row.Index
+                    else:
+                        if row.Index - last < length_range:
+                            remove_index.append(row.Index)
+                        else:
+                            last = row.Index
+            for ri in remove_index:
+                df.loc[ri, "dtw_detect"] = 0
+            return df
+        else:
+            return df
+
+    def __iterate_windown_dataframe(self, df,
+                                    window_size,
+                                    stride=1):
+        tseries = []
+        for i in range(0, len(df), stride):
+            tseries.append(df.iloc[i:i + window_size])
+        return tseries
+
+    def __dtw_cyle_detect(self,
+                          df,
+                          pattern,
+                          max_distance=30,
+                          window=100):
+        self.__job_stat('Detecting cycles using dtw')
+        score = []
+        tseries = self.__iterate_windown_dataframe(df, len(pattern))
+        for t in tseries:
+            score.append(dtw.distance_fast(np.asarray(t), np.asarray(pattern), window=window, use_pruning=True))
+        score_median = median(score)
+        if np.isnan(score_median):
+            clean_score = [x for x in score if not np.isnan(x)]
+            score_median = median(clean_score)
+        if max_distance > 90:
+            self.__job_stat(f'Max distance is to low for dtw cycle detection, mean score is {score_median}')
+            import sys
+            sys.exit(1)
+        df = df.to_frame() # Convert to dataframe from series
+        df['dtw_score'] = score
+        df['dtw_detect'] = 0
+        # df.loc[df.dtw_score < max_distance].dtw_detect = 1
+        treashold = score_median - percentage(max_distance, score_median)
+        df.loc[df["dtw_score"] < treashold, "dtw_detect"] = 1
+        df_detect = df[df['dtw_detect'] == 1]
+        return df, df_detect
 
     def __allowed_file(self, filename):
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in self.allowed_extensions
@@ -321,60 +549,94 @@ class EDEScampEngine():
             return False
 
     def cycle_detection(self,
-                        feature='RawData.mean_value'
+                        # feature='RawData.mean_value',
+                        feature='_value'
                         ):
         # Load Data
         df_data = self.load_data()
         # Load Pattern
         df_pattern = self.__load_pattern()
-
+        if df_data.empty:
+            print("-------> No data from query, DataFrame is empty")
+            return 0, 0, 0
         # Cycle Detection
         self.__job_stat('Started Cycle Detection')
         # self.job.meta['status'] = 'Started Cycle Detection'
         max_distance = self.ede_cfg['operators']['cycle_detect'].get('max_distance', None)
+        dtw = self.ede_cfg['operators']['cycle_detect'].get('dtw', None)
         if max_distance is None:
-            matches = stumpy.match(df_pattern[feature], df_data[feature])
+            print(f"------> {df_pattern.shape}, {df_data.shape}")
+            if dtw is None:
+                matches = stumpy.match(df_pattern[feature], df_data[feature])
+                len_matches = len(matches)
+            else:
+                matches, detect = self.__dtw_cyle_detect(df_data[feature], df_pattern[feature])
+                len_matches = detect.shape[0]
+
         else:
-            matches = stumpy.match(df_pattern[feature], df_data[feature], max_distance=max_distance)
-        print(f"Total cycles: {len(matches)}")
-        matches = self.__heuristic_overlap(matches, df_pattern[feature])
-        print(f"Total cycles after heuristic: {len(matches)}")
-        size_of_pattern = len(df_pattern[feature])
-        # Store matched cycles
-        tseries = []  # store matched cycles
-        for match_distance, match_idx in matches:
-            match_z_norm = stumpy.core.z_norm(
-                df_data[feature].values[match_idx:match_idx + size_of_pattern])
-            tseries.append(match_z_norm)
-        # Manually add feature
+            print(f"------> {df_pattern.shape}, {df_data.shape}")
+            if dtw is None:
+                matches = stumpy.match(df_pattern[feature], df_data[feature], max_distance=max_distance)
+                len_matches = len(matches)
+            else:
+                matches, detect = self.__dtw_cyle_detect(df_data[feature], df_pattern[feature], max_distance=max_distance)
+                len_matches = detect.shape[0]
 
-        self.cdata['detected'] = 0
+        print(f"Total cycles: {len_matches}")
 
-        pattern_list = []
-        tseries = []
-        for match_distance, id in matches:
+        if len_matches < 1:
+            return 0, 0, 0
 
-            # # Get the detected cycle
-            # pattern_list.append({'start': self.cdata[id:id + size_of_pattern].iloc[0].name,
-            #                      'end': self.cdata[id:id + size_of_pattern].iloc[-1].name,
-            #                      'cycle': True})
+        if dtw is None:
+            matches = self.__heuristic_overlap(matches, df_pattern[feature])
+            print(f"Total cycles after heuristic: {len(matches)}")
+            size_of_pattern = len(df_pattern[feature])
+            # Store matched cycles
+            tseries = []  # store matched cycles
+            for match_distance, match_idx in matches:
+                match_z_norm = stumpy.core.z_norm(
+                    df_data[feature].values[match_idx:match_idx + size_of_pattern])
+                tseries.append(match_z_norm)
+            # Manually add feature
 
+            self.cdata['detected'] = 0
 
-            # Change value based on iloc value
-            self.cdata.iloc[id, self.cdata.columns.get_loc('detected')] = 1.0
+            pattern_list = []
+            tseries = []
+            for match_distance, id in matches:
+                # # Get the detected cycle
+                # pattern_list.append({'start': self.cdata[id:id + size_of_pattern].iloc[0].name,
+                #                      'end': self.cdata[id:id + size_of_pattern].iloc[-1].name,
+                #                      'cycle': True})
 
-            # Save detected cycles as numpy array
-            tseries.append(stumpy.core.z_norm(self.cdata['RawData.mean_value'].values[
-                               id:id + size_of_pattern]))
+                # Change value based on iloc value
+                self.cdata.iloc[id, self.cdata.columns.get_loc('detected')] = 1.0
 
+                # Save detected cycles as numpy array
+                tseries.append(stumpy.core.z_norm(self.cdata[feature].values[
+                                                  id:id + size_of_pattern]))
+
+        else:
+            matches = self.__heuristic_overlap_v2(matches, df_pattern[feature])
+            print(f"Total cycles after heuristic v2: {matches[matches['dtw_detect'] == 1].shape[0]}")
+            size_of_pattern = len(df_pattern[feature])
+            # Store matched cycles
+            df_matches = matches[matches['dtw_detect'] == 1]
+            tseries = []  # store matched cycles
+            for index in df_matches.index:
+                tseries.append(matches.iloc[index:index + size_of_pattern]['_value'].values)
+            self.cdata['detected'] = matches['dtw_detect'].values
+            # matches.set_index('_time', inplace=True)
 
         #  Save data for bootstrapping
         if self.ede_cfg['operators']['cycle_detect'].get('checkpoint', False):
             df_cycles = pd.DataFrame(np.array(tseries))
             df_cycles.to_csv(os.path.join(self.data_dir, 'cycles.csv'))
-            df_matches = pd.DataFrame(matches, columns=['Match_distance', 'id'])
+            if dtw is None:
+                df_matches = pd.DataFrame(matches, columns=['Match_distance', 'id'])
             df_matches.to_csv(os.path.join(self.data_dir, 'matches.csv'))
-            self.cdata.drop(['detected'], axis=1).to_csv(os.path.join(self.data_dir, 'data.csv'))
+            # self.cdata.drop(['detected'], axis=1).to_csv(os.path.join(self.data_dir, 'data.csv'))
+            self.cdata.to_csv(os.path.join(self.data_dir, 'data.csv'))
         return tseries, matches, size_of_pattern
 
     def cycle_cluster_trainer(self, save=False):
@@ -399,7 +661,7 @@ class EDEScampEngine():
                 matches = []
                 self.cdata = pd.DataFrame()
         else:
-            tseries, matches, size_of_pattern = self.cycle_detection()
+            tseries, matches, size_of_pattern = self.cycle_detection(feature=self.ede_cfg['source']['ts_source'].get("feature", "_value"))
         # self.job.meta['status'] = 'Computing DTW'
         self.__job_stat('Computing DTW')
         print("Computing DTW")
@@ -420,15 +682,21 @@ class EDEScampEngine():
         labels = clusterer.labels_
         print(f"Unique clusters: {np.unique(labels, return_counts=True)}")
 
-        # Add clustered data
-        df_matches = pd.DataFrame(matches, columns=['Match_distance', 'id'])
-        df_matches['labels'] = labels
+        dtw_method = self.ede_cfg['operators']['cycle_detect'].get('dtw', None)
+        if dtw_method is None:
+            # Add clustered data
+            df_matches = pd.DataFrame(matches, columns=['Match_distance', 'id'])
+            df_matches['labels'] = labels
 
-        self.cdata['labels'] = 0
+            self.cdata['labels'] = 0
 
-        for match_distance, id in matches:
-            self.cdata.iloc[id, self.cdata.columns.get_loc('labels')] = df_matches.loc[
-                df_matches['id'] == id, 'labels']
+            for match_distance, id in matches:
+                self.cdata.iloc[id, self.cdata.columns.get_loc('labels')] = df_matches.loc[
+                    df_matches['id'] == id, 'labels']
+        else:
+            series_labels = dict(zip(matches[matches['dtw_detect'] == 1].index, labels))
+            for k, v in series_labels.items():
+                matches.loc[k, 'labels'] = v
 
         if save:
             # Save clusterer to minio bucket scamp-models
@@ -442,10 +710,18 @@ class EDEScampEngine():
         size_of_pattern = 0
         # self.job.meta['status'] = 'Started Detection'
         self.__job_stat('Started Detection')
+        self.__job_config(self.ede_cfg)
+        dtw = self.ede_cfg['operators']['cycle_detect'].get('dtw', None)
         if self.ede_cfg['operators'].get('cluster', {}):
             tseries, matches, size_of_pattern = self.cycle_cluster_trainer()
         else:
-            tseries, matches, size_of_pattern = self.cycle_detection()
+            if 'ts_source' in self.ede_cfg['source'].keys():
+                tseries, matches, size_of_pattern = self.cycle_detection(feature=self.ede_cfg['source']['ts_source'].get("feature", "_value"))
+            else:
+                self.__job_stat(f'TS source not set with, using default feature _value')
+                tseries, matches, size_of_pattern = self.cycle_detection(feature='_value')
+            if not tseries: # if no pattern was found
+                return {'cycles': []}
         if self.ede_cfg['operators'].get('anomaly', {}):
             tseries, matches, size_of_pattern = self.cycle_anomaly_inference(tseries, matches, size_of_pattern)
 
@@ -453,30 +729,46 @@ class EDEScampEngine():
         # test = 0
         # self.job.meta['status'] = 'Generating output of detection'
         self.__job_stat('Generating output of detection')
-        for match_distance, id in matches:
-            # print(self.cdata[id:id + size_of_pattern].iloc[0].labels)
-            # Get the detected cycle
-            pattern = {'start': self.cdata[id:id + size_of_pattern].iloc[0].name,
-                       'end': self.cdata[id:id + size_of_pattern].iloc[-1].name,
-                       'cycle': True,
-                       # 'cluster': self.cdata[id:id + size_of_pattern].iloc[0].labels
-                       }
-            try:
-                pattern['cluster'] = self.cdata[id:id + size_of_pattern].iloc[0].labels
-            except Exception as e:
-                print(f"No clusterer predictions")
-                pattern['cluster'] = None
+        if dtw is None:
+            for match_distance, id in matches:
+                # print(self.cdata[id:id + size_of_pattern].iloc[0].labels)
+                # Get the detected cycle
+                pattern = {'start': self.cdata[id:id + size_of_pattern].iloc[0].name,
+                           'end': self.cdata[id:id + size_of_pattern].iloc[-1].name,
+                           'cycle': True,
+                           # 'cluster': self.cdata[id:id + size_of_pattern].iloc[0].labels
+                           }
+                try:
+                    pattern['cluster'] = self.cdata[id:id + size_of_pattern].iloc[0].labels
+                except Exception as e:
+                    # print(f"No clusterer predictions")
+                    pattern['cluster'] = None
 
-            try:
-                pattern['anomaly'] = self.cdata[id:id + size_of_pattern].iloc[0].anomaly
-            except Exception as e:
-                print(f"No anomaly predictions")
-                pattern['anomaly'] = None
-            pattern_list.append(pattern)
+                try:
+                    pattern['anomaly'] = self.cdata[id:id + size_of_pattern].iloc[0].anomaly
+                except Exception as e:
+                    # print(f"No anomaly predictions")
+                    pattern['anomaly'] = None
+                pattern_list.append(pattern)
+        else:
+            for index in matches[matches['dtw_detect'] == 1].index:
+                pattern = {'start': self.cdata[index:index + size_of_pattern].iloc[0].name,
+                           'end': self.cdata[index:index + size_of_pattern].iloc[-1].name,
+                           'cycle': True,
+                           # 'cluster': self.cdata[id:id + size_of_pattern].iloc[0].labels
+                           }
+                try:
+                    pattern['cluster'] = matches[index:index + size_of_pattern].iloc[0].labels
+                except Exception as e:
+                    # print(f"No clusterer predictions")
+                    pattern['cluster'] = None
 
-            # test += 1
-            # if test > 10:
-            #     break
+                try:
+                    pattern['anomaly'] = matches[index:index + size_of_pattern].iloc[0].anomaly
+                except Exception as e:
+                    # print(f"No anomaly predictions")
+                    pattern['anomaly'] = None
+                pattern_list.append(pattern)
         detected_cycles = {'cycles': pattern_list}
         # print(detected_cycles)
         # send data to output
@@ -484,7 +776,7 @@ class EDEScampEngine():
         return detected_cycles
 
     def cycle_anomaly_trainer(self, save=False):
-        tseries, matches, size_of_pattern = self.cycle_detection()
+        tseries, matches, size_of_pattern = self.cycle_detection(feature=self.ede_cfg['source']['ts_source'].get("feature", "_value"))
         model = list(self.ede_cfg['operators'].get('anomaly', {}).keys())[0]
         if model: # if no scaler defined then return org data
             module = model.split('.')[0]
@@ -496,18 +788,26 @@ class EDEScampEngine():
 
             ano_label = an_model.predict(np.array(tseries))
             print(f"Detected anomalies: {np.unique(ano_label, return_counts=True)}")
-            df_matches = pd.DataFrame(matches, columns=['Match_distance', 'id'])
-            df_matches["anomaly"] = ano_label
-            self.cdata["anomaly"] = 0
-            for match_distance, id in matches:
-                self.cdata.iloc[id, self.cdata.columns.get_loc("anomaly")] = df_matches.loc[
-                    df_matches['id'] == id, "anomaly"]
+            dtw_method = self.ede_cfg['operators']['cycle_detect'].get('dtw', None)
+            if dtw_method is None:
+                df_matches = pd.DataFrame(matches, columns=['Match_distance', 'id'])
+                df_matches["anomaly"] = ano_label
+                self.cdata["anomaly"] = 0
+                for match_distance, id in matches:
+                    self.cdata.iloc[id, self.cdata.columns.get_loc("anomaly")] = df_matches.loc[
+                        df_matches['id'] == id, "anomaly"]
+            else:
+                series_labels = dict(zip(matches[matches['dtw_detect'] == 1].index, ano_label))
+                for k, v in series_labels.items():
+                    matches.loc[k, 'anomaly'] = v
+
             if save:
                 # Save clusterer to minio bucket scamp-models
                 self.__save_model(an_model, self.ede_cfg['operators']['anomaly']['model'])
         return tseries, matches, size_of_pattern
 
-    def cycle_anomaly_inference(self, tseries=[],
+    def cycle_anomaly_inference(self,
+                                tseries=[],
                                 matches=[],
                                 size_of_pattern=0):
 
@@ -515,7 +815,7 @@ class EDEScampEngine():
         ano_model = self.__load_model(model_name)
         if ano_model:
             if not tseries:
-                tseries, matches, size_of_pattern = self.cycle_detection()
+                tseries, matches, size_of_pattern = self.cycle_detection(feature=self.ede_cfg['source']['ts_source'].get("feature", "_value"))
             ano_label = ano_model.predict(np.array(tseries))
             print(f"Detected anomalies: {np.unique(ano_label, return_counts=True)}")
             df_matches = pd.DataFrame(matches, columns=['Match_distance', 'id'])
@@ -525,7 +825,6 @@ class EDEScampEngine():
                 self.cdata.iloc[id, self.cdata.columns.get_loc("anomaly")] = df_matches.loc[
                     df_matches['id'] == id, "anomaly"]
         return tseries, matches, size_of_pattern
-
 
 if __name__ == '__main__':
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')

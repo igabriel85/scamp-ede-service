@@ -1,39 +1,21 @@
 ---
 source:
-  local: dev355.csv
+  ts_source:
+    query: 'from(bucket: "sensors")|> range(start: -15m)|> filter(fn: (r) => r["_measurement"] == "B827EB019C33")|> filter(fn: (r) => r["_field"] == "value")|> filter(fn: (r) => r["device_id"] == "B827EB019C33")|> filter(fn: (r) => r["sid"] == "1")|> yield(name: "mean")'
 out:
-  grafana: {}
+#   grafana: {}
   kafka:
-    topic: ede_events
-    broker: kafka:9092
+     topic: ede
+     broker: 85.120.206.118:9092
+  influxdb: ede
 operators:
   scaler:
     MinMaxScaler:
       copy: 0
       clip: 0
   cycle_detect:
-    pattern: df_pattern_d355.csv
-    max_distance: 10.0
+    pattern: 'from(bucket: "sensors")|> range(start: 2023-05-24T20:37:59Z, stop: 2023-05-24T20:38:24Z)|> filter(fn: (r) => r["_measurement"] == "B827EB019C33")|> filter(fn: (r) => r["_field"] == "value")|> filter(fn: (r) => r["device_id"] == "B827EB019C33")|> filter(fn: (r) => r["sid"] == "1")|> yield(name: "mean")'
+    max_distance: 30
     checkpoint: 1
-    delta_bias: 10
-  cluster:
-    HDSCAN:
-      min_cluster_size: 30
-      min_samples: 5
-      algorithm: best
-      leaf_size: 30
-    bootstrap: 0
-    model: hdbscan_d355.joblib
-  anomaly:
-    iforest.IForest:
-      n_estimators: 100
-      max_samples: auto
-      contamination: 0.05
-      max_features: 1
-      bootstrap: 0
-      n_jobs: -1
-      behaviour: new
-      random_state:
-      verbose: 0
-    mark: 0
-    model: iforest_d355.joblib
+    delta_bias: 15
+    dtw: 1

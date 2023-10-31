@@ -4,7 +4,7 @@ source:
      host: https://influxdb.services.scamp.roiot.ro
      port: 8086
      token: ejwf0maRkkxuDpit4HmbKiIhLbxFbvS1sUDcZdasfX7-A41pxf8QpYP-rQr2aHrj9bZWywhNkF-9t2n394BwQg==
-     org: scamp
+     org: scampml
      bucket: sensors
   minio_source:
      host: hal720m.sage.ieat.ro:9000
@@ -12,6 +12,6 @@ source:
      secret_key: 2MMynfJBJjjJifAT1GBD58JNkalZf9Lg
      secure: False
   kafka_source:
-     host: kafka.services.scamp.roiot.ro
+     host: 85.120.206.118
      port: 9092
-     topic: scamp-ede
+     topic: ede

@@ -103,8 +103,11 @@ def get_list_workers():
     return list_workers
 
 
-def get_list_data_files(data_folder):
-    g_dir = "{}/*.csv".format(data_folder)
+def get_list_data_files(data_folder, ext='csv', uuid=None):
+    if uuid is None:
+        g_dir = "{}/*.{}".format(data_folder, ext)
+    else:
+        g_dir = "{}/*{}*.{}".format(data_folder, uuid, ext)
     list_data_files = []
     for name in glob.glob(g_dir):
         list_data_files.append(name.split('/')[-1])
@@ -129,3 +132,6 @@ def load_schema(file):
 def check_and_rename(file):
     if os.path.isfile(file):
         os.rename(file, file + ".old")
+
+def percentage(percent, whole):
+  return (percent * whole) / 100.0
