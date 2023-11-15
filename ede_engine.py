@@ -11,7 +11,7 @@ from minio.error import InvalidResponseError
 from kafka import KafkaProducer
 from dtaidistance import dtw
 import hdbscan
-from joblib import dump, load
+from joblib import dump, load, Parallel, delayed
 from statistics import mean, median
 from utils import percentage
 import datetime
