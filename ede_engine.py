@@ -411,14 +411,85 @@ class EDEScampEngine():
             tseries.append(df.iloc[i:i + window_size])
         return tseries
 
+    def __parallel_iterate_window(self,
+                                  df,
+                                  window_size,
+                                  stride=1,
+                                  threads=-1):
+        def chunks(df, chunks=threads):
+            if chunks == -1:
+                return np.array_split(df, os.cpu_count())
+            else:
+                return np.array_split(df, chunks)
+
+        def missing_elements(L):
+            start, end = L[0], L[-1]
+            return sorted(set(range(start, end + 1)).difference(L))
+
+        # resetindex, drop old index
+        old_index = df.index
+        df.reset_index(drop=True, inplace=True)
+
+        # calculate dtw for each chunk
+        tseries_chuncks = Parallel(n_jobs=threads)(
+            delayed(self.__iterate_windown_dataframe)(chunk, window_size, stride) for chunk in chunks(df, threads))
+
+        # merge chunks
+        tseries_merged = sum(tseries_chuncks, [])
+
+        # check for missing values in indexes and return them (assuming they are sequential)
+        missing_elem = missing_elements([d.index[0] for d in tseries_merged])
+
+        # generate missing series for missing elements identified
+        missing_series = []
+        for i in range(0, len(missing_elem)):
+            # print(missing_elem[i], missing_elem[i]+stride)
+            try:
+                missing_series.append(df.iloc[missing_elem[i]:missing_elem[i] + stride])
+            except IndexError:
+                self.__job_stat(f'Error parallel iterate window for {i} with {missing_elem[i]} and {len(df)}')
+                # print(i, missing_elem[i], len(df))
+
+        prev = 0
+        test_merge = []
+        for dt in tseries_merged:
+            # print(dt.index[0])
+            # print(prev, dt.index[0])
+            if prev != dt.index[0]:
+                # print('missing', prev, dt.index[0])
+                count_missing = prev
+                for ms_dt in missing_series:
+                    # print(ms_dt.index[0], count_missing, prev+stride)
+                    if ms_dt.index[0] == count_missing:
+                        # print(ms_dt.index[0], count_missing, prev+stride)
+                        test_merge.append(ms_dt)
+                        if count_missing == prev + stride:
+                            # print('+++++>stopping')
+                            break
+                        else:
+                            count_missing += 1
+                test_merge.append(dt)
+                prev += (stride + 1)
+            else:
+                test_merge.append(dt)
+                prev += 1
+        return test_merge, old_index
+
     def __dtw_cyle_detect(self,
                           df,
                           pattern,
                           max_distance=30,
-                          window=100):
+                          window=100,
+                          proc=4,
+                          parallel=False
+                          ):
         self.__job_stat('Detecting cycles using dtw')
         score = []
-        tseries = self.__iterate_windown_dataframe(df, len(pattern))
+        if parallel:
+            tseries, old_index = self.__parallel_iterate_window(df, len(pattern), stride=1, threads=proc)
+        else:
+            tseries = self.__iterate_windown_dataframe(df, len(pattern))
+            old_index = None
         for t in tseries:
             score.append(dtw.distance_fast(np.asarray(t), np.asarray(pattern), window=window, use_pruning=True))
         score_median = median(score)
@@ -434,6 +505,12 @@ class EDEScampEngine():
         df['dtw_detect'] = 0
         # df.loc[df.dtw_score < max_distance].dtw_detect = 1
         treashold = score_median - percentage(max_distance, score_median)
+
+        # add back old index
+        if old_index is not None:
+            df.index = old_index
+
+        self.__job_stat(f"Treashold: {treashold}")
         df.loc[df["dtw_score"] < treashold, "dtw_detect"] = 1
         df_detect = df[df['dtw_detect'] == 1]
         return df, df_detect
