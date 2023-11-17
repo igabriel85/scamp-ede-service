@@ -179,7 +179,7 @@ class EDEScampEngine():
                                           bootstrap_servers=["{}".format(self.ede_cfg['out']['kafka']['broker'])],
                                           retries=5)
             query = self.ede_cfg['source']['ts_source']['query'] # make independent of influxdb query
-            device_id = query.split("r[\"_measurement\"] ==")[1].split(")")[0].strip().replace("\"", "")
+            device_id = query.split("r[\"device_id\"] ==")[1].split(")")[0].strip().replace("\"", "")
             for cycle in body['cycles']:
                 cycle['device_id'] = device_id
                 cycle['start'] = cycle['start'].strftime('%Y-%m-%d %H:%M:%S.%f')
@@ -205,7 +205,7 @@ class EDEScampEngine():
                 self.create_influxdb_bucket(client=client, bucket_name='ede',
                                             org=self.source_cfg['source']['ts_source'].get('org', 'scampml'))
                 print("Bucket created")
-            device_id = query.split("r[\"_measurement\"] ==")[1].split(")")[0].strip().replace("\"", "")
+            device_id = query.split("r[\"device_id\"] ==")[1].split(")")[0].strip().replace("\"", "")
             self.__job_stat('Pushing data to influxdb')
             write_client = client.write_api(write_options=WriteOptions(batch_size=2,
                                                                        flush_interval=10_000,
@@ -511,6 +511,7 @@ class EDEScampEngine():
             df.index = old_index
 
         self.__job_stat(f"Treashold: {treashold}")
+        print(f"Treashold: {treashold}")
         df.loc[df["dtw_score"] < treashold, "dtw_detect"] = 1
         df_detect = df[df['dtw_detect'] == 1]
         return df, df_detect
