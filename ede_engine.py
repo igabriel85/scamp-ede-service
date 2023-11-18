@@ -1,6 +1,7 @@
 import os
 import numpy as np
 np.random.seed(42)
+from numpy.lib.stride_tricks import sliding_window_view
 import importlib
 import yaml
 import pandas as pd
@@ -66,7 +67,7 @@ class EDEScampEngine():
         self.job.meta['config'] = cfg
         self.job.save_meta()
 
-    def load_data(self):
+    def load_data(self, resample=None):
         '''
         Load the data from different sources as stated in ede engine config
         and defiend in source_cfg
@@ -83,6 +84,8 @@ class EDEScampEngine():
         else:
             # print(ede_cfg['source'].keys())
             raise Exception('Unknown source type')
+        if resample is None:
+            df = df.resample(resample).mean().to_frame()
         self.cdata = df.copy(deep=True)
         return df
 
@@ -411,6 +414,58 @@ class EDEScampEngine():
             tseries.append(df.iloc[i:i + window_size])
         return tseries
 
+    def parallel_type_fix(self, tseries, threads=-1):
+        def chunks(df, chunks=threads):
+            if chunks == -1:
+                return np.array_split(df, os.cpu_count())
+            else:
+                return np.array_split(df, chunks)
+
+        def fix_type(tseries):
+            df_tseries = []
+            for ts in tseries:
+                df_st = pd.Series(ts).astype('float64')
+                # df_st.columns = ['_value', '_time']
+                # drop _time column, use default index
+                # df_st.drop('_time', axis=1, inplace=True)
+                # set _time as index
+                # df_ts.set_index('_time', inplace=True)
+                df_tseries.append(df_st)
+            return df_tseries
+
+        tseries_chuncks = Parallel(n_jobs=threads)(delayed(fix_type)(chunk) for chunk in chunks(tseries, threads))
+        tseries_merge = sum(tseries_chuncks, [])
+        return tseries_merge
+
+    def iterate_window_dataframe_v2(self,
+                                    df,
+                                    window_size,
+                                    threads=0
+                                    ):
+        # data_s = df['_value'].to_frame()
+        # data_s['_time'] = df.index
+        # np_tseries = np.squeeze(sliding_window_view(df.values, window_size, 2))
+        np_tseries = sliding_window_view(df.values, window_size)
+
+        print(f"Fixing type of np_tseries")
+        if threads:
+            self.__job_stat(f'Fixing type of np_tseries using {threads} threads')
+            tseries = self.parallel_type_fix(np_tseries, threads=threads)
+        else:
+            tseries = []
+            for ts in np_tseries:
+                df_st = pd.Series(ts).astype('float64')
+                # df_st = pd.DataFrame(ts).astype('float64')
+                # df_st.columns = ['_value', '_time']
+                # drop _time column, use default index
+                # df_st.drop('_time', axis=1, inplace=True)
+
+                # set _time as index
+                # df_ts.set_index('_time', inplace=True)
+
+                tseries.append(df_st)
+        return tseries
+
     def __parallel_iterate_window(self,
                                   df,
                                   window_size,
@@ -483,12 +538,23 @@ class EDEScampEngine():
                           proc=4,
                           parallel=False
                           ):
+        enhanced_functioning = os.getenv('EDE_ENH', 0)
         self.__job_stat('Detecting cycles using dtw')
         score = []
-        if parallel:
+        if parallel and not enhanced_functioning:
+            print(f"Parallel dtw cycle detection using {proc} threads")
             tseries, old_index = self.__parallel_iterate_window(df, len(pattern), stride=1, threads=proc)
         else:
-            tseries = self.__iterate_windown_dataframe(df, len(pattern))
+            if enhanced_functioning:
+                if parallel:
+                    print(f"Enhanced dtw cycle detection using {proc} threads")
+                    tseries = self.iterate_window_dataframe_v2(df, len(pattern), threads=proc)
+                else:
+                    print(f"Enhanced dtw cycle detection")
+                    tseries = self.iterate_window_dataframe_v2(df, len(pattern))
+            else:
+                print(f"Default dtw cycle detection")
+                tseries = self.__iterate_windown_dataframe(df, len(pattern))
             old_index = None
         for t in tseries:
             score.append(dtw.distance_fast(np.asarray(t), np.asarray(pattern), window=window, use_pruning=True))
@@ -500,6 +566,10 @@ class EDEScampEngine():
             self.__job_stat(f'Max distance is to low for dtw cycle detection, mean score is {score_median}')
             import sys
             sys.exit(1)
+        # fix for incomplete series for v2
+        if len(score) != len(df):
+            max_score = 9999.0
+            score = score + [max_score] * 25
         df = df.to_frame() # Convert to dataframe from series
         df['dtw_score'] = score
         df['dtw_detect'] = 0
@@ -631,7 +701,11 @@ class EDEScampEngine():
                         feature='_value'
                         ):
         # Load Data
-        df_data = self.load_data()
+        # set resampling and parallel execution
+        resample = self.ede_cfg['operators']['cycle_detect'].get('resample', None)
+        parallel = os.getenv('EDE_PARALLEL', 0)
+
+        df_data = self.load_data(resample=resample)
         # Load Pattern
         df_pattern = self.__load_pattern()
         if df_data.empty:
@@ -648,7 +722,10 @@ class EDEScampEngine():
                 matches = stumpy.match(df_pattern[feature], df_data[feature])
                 len_matches = len(matches)
             else:
-                matches, detect = self.__dtw_cyle_detect(df_data[feature], df_pattern[feature])
+                if parallel:
+                    matches, detect = self.__dtw_cyle_detect(df_data[feature], df_pattern[feature], parallel=True, proc=int(parallel))
+                else:
+                    matches, detect = self.__dtw_cyle_detect(df_data[feature], df_pattern[feature])
                 len_matches = detect.shape[0]
 
         else:

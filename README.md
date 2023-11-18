@@ -101,6 +101,8 @@ The configuration file is split up into several subsections:
   * __ts_source__ - Time Series Database source, currently we support InfluxDB.
   * __kafka_source__ - Using a Kafka topic as source.
   * __minio_source__ - Using a Minio bucket as source.
+  * __local__ - Using a local file as source.
+  * __resample__ - Resample the data to a specific time interval. This is useful for data which is not sampled at a constant rate.
 * __out__ - Deals with the output of the engine. Currently we support:
   * __kafka__ - Output to a Kafka topic.
   * __grafana__ - Output to a Grafana dashboard.
@@ -383,6 +385,10 @@ We use several environment variables to configure the service. The following var
 * `REDIS_END` - the endpoint for redis queue
 * `REDIS_PORT` - the port for redis queue
 * `WORKER_THRESHOLD` - threshold modifier for number of supported workers, be default it is twice the number of CPU cores
+* `EDE_ENH` - select enhanced version of windowing for cycle detection, by default legacy version is used
+* `EDE_PARALLEL` - select if parallel version of cycle detection should be used, by default it is set to false. The number of workers is defined by setting this variable
+
+Note: If both `EDE_ENH` and `EDE_PARALLEL` are set to true then the parallel version of the enhanced windowing will be used.
 
 All environment variables have default values in acrodance with the libraries used.
 
