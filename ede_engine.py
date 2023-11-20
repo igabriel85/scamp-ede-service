@@ -187,7 +187,7 @@ class EDEScampEngine():
                 cycle['device_id'] = device_id
                 cycle['start'] = cycle['start'].strftime('%Y-%m-%d %H:%M:%S.%f')
                 cycle['end'] = cycle['end'].strftime('%Y-%m-%d %H:%M:%S.%f')
-            producer.send(self.ede_cfg['out']['kafka']['topic'], body)
+                producer.send(self.ede_cfg['out']['kafka']['topic'], cycle)
             self.__job_stat('Outputting to kafka')
             # self.job.meta['status'] = 'Output to kafka'
         except Exception as inst:
