@@ -57,3 +57,10 @@ spec:
           requests:
             cpu: "2"
             memory: 8Gi
+        volumeMounts:
+        - mountPath: "/app/etc"
+          name: etc-pv
+      volumes:
+      - name: etc-pv
+        persistentVolumeClaim:
+          claimName: scampml-ede-etc
