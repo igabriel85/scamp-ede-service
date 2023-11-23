@@ -84,7 +84,7 @@ class EDEScampEngine():
         else:
             # print(ede_cfg['source'].keys())
             raise Exception('Unknown source type')
-        if resample is None:
+        if resample is not None:
             df = df.resample(resample).mean().to_frame()
         self.cdata = df.copy(deep=True)
         return df
