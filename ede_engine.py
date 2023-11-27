@@ -185,7 +185,7 @@ class EDEScampEngine():
             device_id = query.split("r[\"device_id\"] ==")[1].split(")")[0].strip().replace("\"", "")
             for cycle in body['cycles']:
                 # cycle['device_id'] = device_id
-                cycle['id'] = device_id
+                cycle['node'] = device_id
                 cycle['cycle_start'] = cycle['start'].strftime('%Y-%m-%d %H:%M:%S.%f')
                 cycle['cycle_end'] = cycle['end'].strftime('%Y-%m-%d %H:%M:%S.%f')
                 producer.send(self.ede_cfg['out']['kafka']['topic'], cycle)
