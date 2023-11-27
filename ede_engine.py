@@ -184,9 +184,10 @@ class EDEScampEngine():
             query = self.ede_cfg['source']['ts_source']['query'] # make independent of influxdb query
             device_id = query.split("r[\"device_id\"] ==")[1].split(")")[0].strip().replace("\"", "")
             for cycle in body['cycles']:
-                cycle['device_id'] = device_id
-                cycle['start'] = cycle['start'].strftime('%Y-%m-%d %H:%M:%S.%f')
-                cycle['end'] = cycle['end'].strftime('%Y-%m-%d %H:%M:%S.%f')
+                # cycle['device_id'] = device_id
+                cycle['id'] = device_id
+                cycle['cycle_start'] = cycle['start'].strftime('%Y-%m-%d %H:%M:%S.%f')
+                cycle['cycle_end'] = cycle['end'].strftime('%Y-%m-%d %H:%M:%S.%f')
                 producer.send(self.ede_cfg['out']['kafka']['topic'], cycle)
             self.__job_stat('Outputting to kafka')
             # self.job.meta['status'] = 'Output to kafka'
@@ -909,7 +910,7 @@ class EDEScampEngine():
             for index in matches[matches['dtw_detect'] == 1].index:
                 pattern = {'start': self.cdata[index:index + size_of_pattern].iloc[0].name,
                            'end': self.cdata[index:index + size_of_pattern].iloc[-1].name,
-                           'cycle': True,
+                           'cycle_type': True,
                            # 'cluster': self.cdata[id:id + size_of_pattern].iloc[0].labels
                            }
                 try:
