@@ -177,6 +177,7 @@ class EDEScampEngine():
 
     def __kafka_out(self, body):
         # Output the results to kafka
+        print('Outputting to kafka')
         try:
             producer = KafkaProducer(value_serializer=lambda v: json.dumps(v).encode('utf-8'),
                                           bootstrap_servers=["{}".format(self.ede_cfg['out']['kafka']['broker'])],
@@ -186,8 +187,12 @@ class EDEScampEngine():
             for cycle in body['cycles']:
                 # cycle['device_id'] = device_id
                 cycle['node'] = device_id
-                cycle['cycle_start'] = cycle['start'].strftime('%Y-%m-%d %H:%M:%S.%f')
-                cycle['cycle_end'] = cycle['end'].strftime('%Y-%m-%d %H:%M:%S.%f')
+                start = cycle['start'].strftime('%Y-%m-%d %H:%M:%S.%f')
+                end = cycle['end'].strftime('%Y-%m-%d %H:%M:%S.%f')
+                cycle['cycle_start'] = start
+                cycle['cycle_end'] = end
+                del cycle['start']
+                del cycle['end']
                 producer.send(self.ede_cfg['out']['kafka']['topic'], cycle)
             self.__job_stat('Outputting to kafka')
             # self.job.meta['status'] = 'Output to kafka'
