@@ -30,6 +30,7 @@ import warnings
 from influxdb_client.client.warnings import MissingPivotFunction
 warnings.simplefilter("ignore", MissingPivotFunction)
 
+from ede_schema import ede_kafka_detection
 
 class EDEScampEngine():
     def __init__(self,
@@ -187,13 +188,16 @@ class EDEScampEngine():
             for cycle in body['cycles']:
                 # cycle['device_id'] = device_id
                 cycle['node'] = device_id
-                start = cycle['start'].strftime('%Y-%m-%d %H:%M:%S.%f')
-                end = cycle['end'].strftime('%Y-%m-%d %H:%M:%S.%f')
-                cycle['cycle_start'] = start
-                cycle['cycle_end'] = end
+                cycle['cycle_start'] = cycle['start'].timestamp()
+                cycle['cycle_end'] = cycle['end'].timestamp()
+                if cycle['anomaly'] is None:
+                    cycle['anomaly'] = ''
+                if cycle['cluster'] is None:
+                    cycle['cluster'] = ''
                 del cycle['start']
                 del cycle['end']
-                producer.send(self.ede_cfg['out']['kafka']['topic'], cycle)
+                ede_kafka_detection['payload'] = cycle
+                producer.send(self.ede_cfg['out']['kafka']['topic'], ede_kafka_detection)
             self.__job_stat('Outputting to kafka')
             # self.job.meta['status'] = 'Output to kafka'
         except Exception as inst:
