@@ -303,10 +303,10 @@ class EDEScampEngine():
         # Output the results
         if 'grafana' in self.ede_cfg['out'].keys():
             print('todo grafana output')
-        if 'kafka' in self.ede_cfg['out'].keys():
-            self.__kafka_out(data)
         if 'influxdb' in self.ede_cfg['out'].keys():
             self.__influxdb_out(data)
+        if 'kafka' in self.ede_cfg['out'].keys():
+            self.__kafka_out(data)
         if 'local' in self.ede_cfg['out'].keys():
             self.__local_out(data)
 
