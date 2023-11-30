@@ -3,12 +3,12 @@ ede_kafka_detection = {
         "type": "struct",
         "fields": [
             {
-                "type": "string",
+                "type": "int64",
                 "optional": "false",
                 "field": "cycle_start"
             },
             {
-                "type": "string",
+                "type": "int64",
                 "optional": "false",
                 "field": "cycle_end"
             },
