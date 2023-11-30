@@ -188,8 +188,8 @@ class EDEScampEngine():
             for cycle in body['cycles']:
                 # cycle['device_id'] = device_id
                 cycle['node'] = device_id
-                cycle['cycle_start'] = cycle['start'].timestamp()
-                cycle['cycle_end'] = cycle['end'].timestamp()
+                cycle['cycle_start'] = cycle['start'].timestamp()*1000
+                cycle['cycle_end'] = cycle['end'].timestamp()*1000
                 cycle['cycle_type'] = int(cycle['cycle_type'])
                 if cycle['anomaly'] is None:
                     cycle['anomaly'] = ''
