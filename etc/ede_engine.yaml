@@ -1,7 +1,7 @@
 ---
 source:
   ts_source:
-    query: 'from(bucket: "sensors")|> range(start: -15m)|> filter(fn: (r) => r["_measurement"] == "B827EB019C33")|> filter(fn: (r) => r["_field"] == "value")|> filter(fn: (r) => r["device_id"] == "B827EB019C33")|> filter(fn: (r) => r["sid"] == "1")|> yield(name: "mean")'
+    query: 'from(bucket: "sensors")|> range(start: -6m)|>  filter(fn: (r) => r["_measurement"] == "90380CA82E20") |> filter(fn: (r) => r["_field"] == "value")|> filter(fn: (r) => r["device_id"] == "90380CA82E20")|> filter(fn: (r) => r["sid"] == "31")|> yield(name: "mean")'
 out:
 #   grafana: {}
   kafka:
@@ -14,8 +14,8 @@ operators:
       copy: 0
       clip: 0
   cycle_detect:
-    pattern: 'from(bucket: "sensors")|> range(start: 2023-05-24T20:37:59Z, stop: 2023-05-24T20:38:24Z)|> filter(fn: (r) => r["_measurement"] == "B827EB019C33")|> filter(fn: (r) => r["_field"] == "value")|> filter(fn: (r) => r["device_id"] == "B827EB019C33")|> filter(fn: (r) => r["sid"] == "1")|> yield(name: "mean")'
-    max_distance: 30
+    pattern: 'from(bucket: "sensors")|> range(start: 2023-11-16T11:15:28Z, stop: 2023-11-16T11:15:39Z)|> filter(fn: (r) => r["device_id"] == "90380CA82E20")|> filter(fn: (r) => r["_field"] == "value")|> filter(fn: (r) => r["sid"] == "31")|> yield(name: "mean")'
+    max_distance: 15
     checkpoint: 1
-    delta_bias: 15
+    delta_bias: 5
     dtw: 1
