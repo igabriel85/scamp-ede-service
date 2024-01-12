@@ -446,3 +446,29 @@ in its entirety. The following methods are currently supported:
 | Graph-based       | R-Graph           | Outlier detection by R-graph                                                                            |
 | Graph-based       | LUNAR             | LUNAR: Unifying Local Outlier Detection   Methods via Graph Neural Networks                             |
 
+# NOTICE
+
+This product includes software developed at "[Research Institute e-Austria](https://www.ieat.ro/), Romania", as part of the "[SCAMP-ML](https://www.eta2u.ro/index.php/despre-noi/comunicate/1736-eta2u-innovation-scamp-ml) - Statistici computaționale avansate pentru planificarea și urmărirea mediilor de producție" (Organismul Intermediar pentru Cercetare (OIC) - Program Operațional Competitivitate, Componenta 1 – Proiect Tehnologic Inovativ pentru regiuni mai puțin dezvoltate (fără București – Ilfov), axa prioritară - Cercetare, dezvoltare tehnologică și inovare (CDI)).
+
+* https://www.ieat.ro/
+
+*Developers*:
+
+* Gabriel Iuhasz <gabriel.iuhasz@e-uvt.ro>
+
+*Copyright*:
+
+```
+Copyright 2021-2023, Research Institute e-Austria, Timisoara, Romania
+    https://www.ieat.ro/
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at:
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
