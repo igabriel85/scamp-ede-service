@@ -159,9 +159,16 @@ class EDEScampEngine():
     def __local_out(self, body):
         # fixed the date format
         processed_cycles = []
+        try:
+            query = self.ede_cfg['source']['ts_source']['query']  # make independent of influxdb query
+            sensor_id = query.split('r["sid"]')[1].split('|>')[0].split('==')[1].strip().replace('"', '').replace(")",                                                                                                                  '')
+        except Exception as inst:
+            self.__job_stat(f'Error outputting to influxdb with {type(inst)} and {inst.args}')
+            sensor_id = "0"
         for cycle in body['cycles']:
             cycle['start'] = cycle['start'].strftime("%Y-%m-%d %H:%M:%S")
             cycle['end'] = cycle['end'].strftime("%Y-%m-%d %H:%M:%S")
+            cycle['sid'] = sensor_id
             processed_cycles.append(cycle)
         processed_body = {}
         processed_body['cycles'] = processed_cycles
@@ -185,9 +192,15 @@ class EDEScampEngine():
                                           retries=5)
             query = self.ede_cfg['source']['ts_source']['query'] # make independent of influxdb query
             device_id = query.split("r[\"device_id\"] ==")[1].split(")")[0].strip().replace("\"", "")
+            try:
+                sensor_id = query.split('r["sid"]')[1].split('|>')[0].split('==')[1].strip().replace('"','').replace(")", '')
+            except Exception as inst:
+                self.__job_stat(f'Error outputting to influxdb with {type(inst)} and {inst.args}')
+                sensor_id = "0"
             for cycle in body['cycles']:
                 # cycle['device_id'] = device_id
                 cycle['node'] = device_id
+                cycle['sid'] = sensor_id
                 cycle['cycle_start'] = cycle['start'].timestamp()
                 cycle['cycle_end'] = cycle['end'].timestamp()
                 if cycle['anomaly'] is None:
@@ -219,6 +232,11 @@ class EDEScampEngine():
                                             org=self.source_cfg['source']['ts_source'].get('org', 'scampml'))
                 print("Bucket created")
             device_id = query.split("r[\"device_id\"] ==")[1].split(")")[0].strip().replace("\"", "")
+            try:
+                sensor_id = query.split('r["sid"]')[1].split('|>')[0].split('==')[1].strip().replace('"','').replace(")", '')
+            except Exception as inst:
+                self.__job_stat(f'Error outputting to influxdb with {type(inst)} and {inst.args}')
+                sensor_id = "0"
             self.__job_stat('Pushing data to influxdb')
             write_client = client.write_api(write_options=WriteOptions(batch_size=2,
                                                                        flush_interval=10_000,
@@ -230,13 +248,13 @@ class EDEScampEngine():
             for detect in body['cycles']:
                 print(f"-----> Cycle start {detect['start']}")
                 write_client.write(bucket="ede",
-                                   record=Point(device_id).tag("device_id", device_id).tag("cycle", "start").field(
+                                   record=Point(device_id).tag("device_id", device_id).tag("sid", sensor_id).tag("cycle", "start").field(
                                        "value", 1.0).time(detect['start'],
                                                           WritePrecision.NS
                                                           ))
                 print(f"-----> Cycle end {detect['end']}")
                 write_client.write(bucket="ede",
-                                   record=Point(device_id).tag("device_id", device_id).tag("cycle", "end").field(
+                                   record=Point(device_id).tag("device_id", device_id).tag("sid", sensor_id).tag("cycle", "end").field(
                                        "value", 2.0).time(detect['end'],
                                                           WritePrecision.NS
                                                           ))
