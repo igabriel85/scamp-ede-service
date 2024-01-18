@@ -206,7 +206,7 @@ class EDEScampEngine():
                 self.__job_stat(f'Error fetching sensor id for kafka_out with {type(inst)} and {inst.args}')
                 sensor_id = "0"
             for cycle in body['cycles']:
-                cycle['device_id'] = device_id
+                # cycle['device_id'] = device_id
                 cycle['node'] = device_id
                 cycle['sid'] = sensor_id
                 cycle['cycle_start'] = cycle['start'].timestamp()*1000
