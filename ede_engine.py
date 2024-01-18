@@ -190,15 +190,23 @@ class EDEScampEngine():
             producer = KafkaProducer(value_serializer=lambda v: json.dumps(v).encode('utf-8'),
                                           bootstrap_servers=["{}".format(self.ede_cfg['out']['kafka']['broker'])],
                                           retries=5)
-            query = self.ede_cfg['source']['ts_source']['query'] # make independent of influxdb query
-            device_id = query.split("r[\"device_id\"] ==")[1].split(")")[0].strip().replace("\"", "")
+            try:
+                query = self.ede_cfg['source']['ts_source']['query'] # make independent of influxdb query
+            except Exception as inst:
+                self.__job_stat(f'Error fetching influxdb query with {type(inst)} and {inst.args}')
+                query = "None"
+            try:
+                device_id = query.split("r[\"device_id\"] ==")[1].split(")")[0].strip().replace("\"", "")
+            except Exception as inst:
+                self.__job_stat(f'Error fetching device_id for kafka_out with {type(inst)} and {inst.args}')
+                device_id = "None"
             try:
                 sensor_id = query.split('r["sid"]')[1].split('|>')[0].split('==')[1].strip().replace('"','').replace(")", '')
             except Exception as inst:
-                self.__job_stat(f'Error outputting to influxdb with {type(inst)} and {inst.args}')
+                self.__job_stat(f'Error fetching sensor id for kafka_out with {type(inst)} and {inst.args}')
                 sensor_id = "0"
             for cycle in body['cycles']:
-                # cycle['device_id'] = device_id
+                cycle['device_id'] = device_id
                 cycle['node'] = device_id
                 cycle['sid'] = sensor_id
                 cycle['cycle_start'] = cycle['start'].timestamp()*1000
@@ -225,14 +233,22 @@ class EDEScampEngine():
             client = InfluxDBClient(url=self.source_cfg['source']['ts_source']['host'],
                                     token=self.source_cfg['source']['ts_source']['token'],
                                     org=self.source_cfg['source']['ts_source'].get('org', 'scampml'))
-            query = self.ede_cfg['source']['ts_source']['query']
+            try:
+                query = self.ede_cfg['source']['ts_source']['query']
+            except Exception as inst:
+                self.__job_stat(f'Error fetching influxdb query with {type(inst)} and {inst.args}')
+                query = "None"
             if not self.check_bucket_exists(client, 'ede'):
                 print("Creating bucket ede")
                 self.__job_stat('Creating Influxdb bucket')
                 self.create_influxdb_bucket(client=client, bucket_name='ede',
                                             org=self.source_cfg['source']['ts_source'].get('org', 'scampml'))
                 print("Bucket created")
-            device_id = query.split("r[\"device_id\"] ==")[1].split(")")[0].strip().replace("\"", "")
+            try:
+                device_id = query.split("r[\"device_id\"] ==")[1].split(")")[0].strip().replace("\"", "")
+            except Exception as inst:
+                self.__job_stat(f'Error fetching device_id for influxdb_out with {type(inst)} and {inst.args}')
+                device_id = "None"
             try:
                 sensor_id = query.split('r["sid"]')[1].split('|>')[0].split('==')[1].strip().replace('"','').replace(")", '')
             except Exception as inst:
