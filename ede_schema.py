@@ -20,6 +20,11 @@ ede_kafka_detection = {
             {
                 "type": "string",
                 "optional": "false",
+                "field": "sid"
+            },
+            {
+                "type": "string",
+                "optional": "false",
                 "field": "node"
             },
             {
