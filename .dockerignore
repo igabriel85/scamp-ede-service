@@ -1,1 +1,5 @@
 k8s
+docker-compose.yaml
+.gitignore
+.dockerignore
+.git
