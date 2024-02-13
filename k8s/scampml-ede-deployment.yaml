@@ -29,7 +29,7 @@ spec:
       - name: gitlab-scampml-ede-puller
       containers:
       - name: scampml-ede
-        image: registry.dev.scamp.roiot.ro/scamp-ml/ede-service:0.0.11
+        image: registry.dev.scamp.roiot.ro/scamp-ml/ede-service:0.0.19
         imagePullPolicy: Always
         env:
           - name: REDIS_END
