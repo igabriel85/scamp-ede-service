@@ -18,6 +18,7 @@ from utils import percentage
 import datetime
 import time
 import glob
+import gc
 
 # from logging import getLogger
 # log = getLogger(__name__)
@@ -973,6 +974,20 @@ class EDEScampEngine():
         # print(detected_cycles)
         # send data to output
         self.__output(detected_cycles)
+
+        # fix memory leak
+        if os.environ.get('EDE_LEAK', 0):
+            try:
+                del tseries
+                del matches
+                del size_of_pattern
+                del pattern_list
+                # del self.cdata
+                self.cdata = 0
+                gc.collect()
+            except Exception as e:
+                self.__job_stat(f"Error while deleting variables with {type(e)} and {e.args}")
+
         return detected_cycles
 
     def cycle_anomaly_trainer(self, save=False):
